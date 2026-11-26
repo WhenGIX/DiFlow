@@ -1,0 +1,20 @@
+{
+  "schema_version": "dmd.paper_planner_results.v1",
+  "comparison_source": "Figure 9",
+  "rows": [
+    {"id": "W2", "manual_cycle_s": 255.72, "selected_cycle_s": 255.67, "gap_percent": -0.02},
+    {"id": "W3", "manual_cycle_s": 20.524, "selected_cycle_s": 20.59, "gap_percent": 0.32},
+    {"id": "W4", "manual_cycle_s": 42.514, "selected_cycle_s": 42.45, "gap_percent": -0.15},
+    {"id": "W5", "manual_cycle_s": 82.90, "selected_cycle_s": 82.99, "gap_percent": 0.11},
+    {"id": "W6", "manual_cycle_s": 114.88, "selected_cycle_s": 116.81, "gap_percent": 1.68}
+  ],
+  "approximate_sampling_source": "Figure 7(a)",
+  "approximate_sampling_seconds": {
+    "W1": 236,
+    "W2": 217,
+    "W3": 78,
+    "W4": 142,
+    "W5": 132,
+    "W6": 137
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "schema_version": "distillschedule.training.v1",
+  "model": {
+    "workload": "W5"
+  },
+  "data": {},
+  "algorithm": {
+    "name": "original_h3_fullseq_continuous"
+  },
+  "execution": {
+    "adapter": "native",
+    "mode": "manual",
+    "task": "task.json",
+    "assets": "REPLACE_WITH_QUALIFIED_NATIVE_ASSETS.json",
+    "preset": "h3_fullseq.cpu_staged_trim.v2"
+  },
+  "trainer": {
+    "cycles": 2,
+    "checkpoint_every": 0,
+    "output_dir": "REPLACE_WITH_PROJECT_OUTPUT_DIRECTORY"
+  }
+}

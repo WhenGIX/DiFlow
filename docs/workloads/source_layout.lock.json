@@ -1,0 +1,441 @@
+{
+  "schema_version": "distillschedule.source_layout_lock.v2",
+  "files": {
+    "src/distillschedule/backends/training/minimax_h3/adaln_cache.py": {
+      "target": "src/distillschedule/backends/training/minimax_h3/adaln_cache.py",
+      "integrated_sha256": "34e5e3fe7d4f7bdf101c663fc163e6bf77c65c1c5822ca92dbcf24e2997ac8c4",
+      "source_commit": "c95fb8598791eb22b69c74bfcd60c31aa642c3bc"
+    },
+    "src/distillschedule/backends/training/minimax_h3/entrypoint.py": {
+      "target": "src/distillschedule/backends/training/minimax_h3/entrypoint.py",
+      "integrated_sha256": "0d5c8389a1594522961b2dfbf160ec390ea0b6f307c83504188409bd1c916243",
+      "source_commit": "c95fb8598791eb22b69c74bfcd60c31aa642c3bc"
+    },
+    "src/distillschedule/backends/training/minimax_h3/fa3_replay_cache.py": {
+      "target": "src/distillschedule/backends/training/minimax_h3/fa3_replay_cache.py",
+      "integrated_sha256": "6335acbbef4a28a3b715b5fb387fd9dfe4921471050ceb07865546ecb94b3599",
+      "source_commit": "6225b6df51eb2c0a5c18516614ffaf6636328f65"
+    },
+    "src/distillschedule/backends/training/minimax_h3/grid_adaln.py": {
+      "target": "src/distillschedule/backends/training/minimax_h3/grid_adaln.py",
+      "integrated_sha256": "e80755094038d10908f6a7e4325d0831faab9e38af2f6a42e731cc6a0669d325",
+      "source_commit": "6225b6df51eb2c0a5c18516614ffaf6636328f65"
+    },
+    "src/distillschedule/backends/training/minimax_h3/grid_entrypoint.py": {
+      "target": "src/distillschedule/backends/training/minimax_h3/grid_entrypoint.py",
+      "integrated_sha256": "f93e2ac41cc9d00d1f1a4bca31f2b6d365d59e1e554db82ac66ee5e728308e04",
+      "source_commit": "2a7708f5064fbb6df91810145d90fd3f3b3e33b4"
+    },
+    "src/distillschedule/backends/training/minimax_h3/integrated_entrypoint.py": {
+      "target": "src/distillschedule/backends/training/minimax_h3/integrated_entrypoint.py",
+      "integrated_sha256": "339ab57c2177190519f04a1c00b027b3224cef016d542c92670e478e4fa12a8d",
+      "source_commit": "c95fb8598791eb22b69c74bfcd60c31aa642c3bc"
+    },
+    "src/distillschedule/backends/training/minimax_h3/matched_contract.py": {
+      "target": "src/distillschedule/backends/training/minimax_h3/matched_contract.py",
+      "integrated_sha256": "cf2956f3a2242dc452a5f46587c0ee8b125ab2fd0eda72dab007ed0df6009e99",
+      "source_commit": "c95fb8598791eb22b69c74bfcd60c31aa642c3bc"
+    },
+    "src/distillschedule/backends/training/minimax_h3/trainer.py": {
+      "target": "src/distillschedule/backends/training/minimax_h3/trainer.py",
+      "integrated_sha256": "d9276ebb5a388b53170946e2a955b079f30c1e78de0067027871ed7f8d2b33f6",
+      "source_commit": "c95fb8598791eb22b69c74bfcd60c31aa642c3bc"
+    },
+    "src/distillschedule/backends/training/minimax_h3/trainer_loop.py": {
+      "target": "src/distillschedule/backends/training/minimax_h3/trainer_loop.py",
+      "integrated_sha256": "6cc2ca39b39b64f5c291741b221648abda8c4a5c39fdb80801a22e0af8cdf5af",
+      "source_commit": "c95fb8598791eb22b69c74bfcd60c31aa642c3bc"
+    },
+    "scripts/distillschedule/launch_wan13b_fair_world16_node.sh": {
+      "target": "scripts/distillschedule/launch_wan13b_fair_world16_node.sh",
+      "integrated_sha256": "14452011352b9f23e0d95e4d409db1855fdda0892c334ad0514eca7626150df2",
+      "source_commit": "c95fb8598791eb22b69c74bfcd60c31aa642c3bc"
+    },
+    "scripts/distillschedule/probe_wan13b_fair_world16.py": {
+      "target": "scripts/distillschedule/probe_wan13b_fair_world16.py",
+      "integrated_sha256": "12cab5fe8eb9b38da79706fd5063e069b44def41e9b0d736be2643708eb1eaac",
+      "source_commit": "d8fdbb5d6c80bed4a5dbf087136c0727e81774e4"
+    },
+    "src/distillschedule/runtime/wan13b_lora_cast.py": {
+      "target": "src/distillschedule/runtime/wan13b_lora_cast.py",
+      "integrated_sha256": "cdf0c1afaf5065f6759130fd443aed0c24526e648bbef7b9ace4068ea8119b03",
+      "source_commit": "d8fdbb5d6c80bed4a5dbf087136c0727e81774e4"
+    },
+    "runtime/gst_pool_helios.py": {
+      "target": "runtime/gst_pool_helios.py",
+      "integrated_sha256": "da754a01af8aac2dd179326aa7a28007caf85c960b9e2b374042239ae76c0ab3",
+      "source_commit": "1b00120d5070e434de00c0343ac3ec362648f240"
+    },
+    "runtime/static_fsdp2_p0_helios.py": {
+      "target": "runtime/static_fsdp2_p0_helios.py",
+      "integrated_sha256": "a0dc38cfaa1118df0fd33fdf516183d04d7aef00ba64da964f56d2ed37f17e3e",
+      "source_commit": "1b00120d5070e434de00c0343ac3ec362648f240"
+    },
+    "runtime/static_world16_trace.py": {
+      "target": "runtime/static_world16_trace.py",
+      "integrated_sha256": "2cdca148183447292069ec0dd73f0a3a6e11fdb99cce67a671b020c2a2dd86a0",
+      "source_commit": "ea29129342741b54e59c4773e07454f541fadcc7"
+    },
+    "scripts/distillschedule/launch_static_fsdp2_p0_world16_node.sh": {
+      "target": "scripts/distillschedule/launch_static_fsdp2_p0_world16_node.sh",
+      "integrated_sha256": "d81aada2eb3af4e8495d4c0d55f8cd7179d686dde9cf2f602a6408e387d9c413",
+      "source_commit": "ea29129342741b54e59c4773e07454f541fadcc7"
+    },
+    "scripts/distillschedule/probe_static_fsdp2_p0_world16.py": {
+      "target": "scripts/distillschedule/probe_static_fsdp2_p0_world16.py",
+      "integrated_sha256": "6b9a04f6842c2d52d6038354175421e998b9e8e5a5f84c71ba87667b9ab77d20",
+      "source_commit": "112adf5fb165b59a4d975c110c00cb41ed38a1bc"
+    },
+    "scripts/distillschedule/probe_static_fsdp2_p0_world16_hardened.py": {
+      "target": "scripts/distillschedule/probe_static_fsdp2_p0_world16_hardened.py",
+      "integrated_sha256": "49ae0ca5d049f2a7affe1bfd1e51ca1bd1798db323435e8327897b9ab76488e6",
+      "source_commit": "ea29129342741b54e59c4773e07454f541fadcc7"
+    },
+    "scripts/distillschedule/run_static_fsdp2_p0_world16.py": {
+      "target": "scripts/distillschedule/run_static_fsdp2_p0_world16.py",
+      "integrated_sha256": "6a31ec5d1461b7d7777b6741fc8639c8f2285301bfd1e1ad8b4b8a6e73c2292c",
+      "source_commit": "c95fb8598791eb22b69c74bfcd60c31aa642c3bc"
+    },
+    "src/distillschedule/runtime/fsdp2_p0.py": {
+      "target": "src/distillschedule/runtime/fsdp2_p0.py",
+      "integrated_sha256": "d9f2a3f20ed5e8730083d4e2009c88f321fdf6c0297d494dd23412ab17b77eff",
+      "source_commit": "ea29129342741b54e59c4773e07454f541fadcc7"
+    },
+    "src/distillschedule/runtime/fsdp2_static.py": {
+      "target": "src/distillschedule/runtime/fsdp2_static.py",
+      "integrated_sha256": "dd2fd0861f058b731145b9868524c13542d38c9ad19973de90b99088aa4a5d50",
+      "source_commit": "0b93933107f4762b5d2cb29867eb749b4cb67a5d",
+      "reviewed_source_sha256": "dd2fd0861f058b731145b9868524c13542d38c9ad19973de90b99088aa4a5d50"
+    },
+    "src/distillschedule/runtime/helios_lora_epilogue.py": {
+      "target": "src/distillschedule/runtime/helios_lora_epilogue.py",
+      "integrated_sha256": "9e2ac9a5e381fdea1d17598bb9970448e8a82c0ea66e0c60857fb8af3dc45151",
+      "source_commit": "ea29129342741b54e59c4773e07454f541fadcc7"
+    },
+    "scripts/distillschedule/launch_livewan_crossscale_world16_node.sh": {
+      "target": "scripts/distillschedule/launch_livewan_crossscale_world16_node.sh",
+      "integrated_sha256": "1089504e60787878916c2c997ee725d4ee548568723415e684e42246f75e109a",
+      "source_commit": "ea29129342741b54e59c4773e07454f541fadcc7"
+    },
+    "scripts/distillschedule/probe_livewan_crossscale_transport.py": {
+      "target": "scripts/distillschedule/probe_livewan_crossscale_transport.py",
+      "integrated_sha256": "5829e9aca1e7e5c525f5fc321960c67fe80da791966e8ac834401b96b49cd93e",
+      "source_commit": "ea29129342741b54e59c4773e07454f541fadcc7"
+    },
+    "scripts/distillschedule/run_livewan_crossscale_world16.py": {
+      "target": "scripts/distillschedule/run_livewan_crossscale_world16.py",
+      "integrated_sha256": "e5b9abb3d0e23bd35711e5c6139573135b20c40899b25060bae88749a46ce222",
+      "source_commit": "c95fb8598791eb22b69c74bfcd60c31aa642c3bc"
+    },
+    "src/distillschedule/adapters/__init__.py": {
+      "target": "src/distillschedule/adapters/__init__.py",
+      "integrated_sha256": "ab79e89eee9369830670b0f350d34ff2e551448df43153ee655976b3ada6b000",
+      "source_commit": "f14447c7d733a31fcb5ed4ce4de4ca0bfeeaad1e"
+    },
+    "src/distillschedule/runtime/livewan_attention_backend.py": {
+      "target": "src/distillschedule/runtime/livewan_attention_backend.py",
+      "integrated_sha256": "1f923b3b42430f0c235013aea1317794ae2e68cb5148607de9d88c612d473f25",
+      "source_commit": "c95fb8598791eb22b69c74bfcd60c31aa642c3bc"
+    },
+    "src/distillschedule/runtime/livewan_cross_kv_cache.py": {
+      "target": "src/distillschedule/runtime/livewan_cross_kv_cache.py",
+      "integrated_sha256": "578d83354dc1e91026cf772b6a13bfc247191baca6d5956dfbb44047c72f0d12",
+      "source_commit": "497e3aef5d44bda5ed80fdb4b3a5fd5f2639edae"
+    },
+    "src/distillschedule/runtime/livewan_crossscale_worker.py": {
+      "target": "src/distillschedule/runtime/livewan_crossscale_worker.py",
+      "integrated_sha256": "aa3764c247826bb5c0dcb758e7e70c8dbdc29e530b16753b657f27d4c1fd1a30",
+      "source_commit": "497e3aef5d44bda5ed80fdb4b3a5fd5f2639edae"
+    },
+    "scripts/distillctl.py": {
+      "target": "scripts/distillctl.py",
+      "integrated_sha256": "21bb50f7b0e8dc3f73d80f1ff639e9611bb805155d630424d3100354c718ee33",
+      "source_commit": "e6317e64232d4bdd53a3bbb57ff911121f21bc62"
+    },
+    "scripts/distillschedule/check_best_known_integration.py": {
+      "target": "scripts/distillschedule/check_best_known_integration.py",
+      "integrated_sha256": "e0fd1819f6041c913f495de0a0823154f4337fe5e176932be7477fdd3cdb24e8",
+      "source_commit": "a9b6f0f3eac23f65dbd783637c3a597724ff1760"
+    },
+    "scripts/distillschedule/launch_minimax_h3_best_node.sh": {
+      "target": "scripts/distillschedule/launch_minimax_h3_best_node.sh",
+      "integrated_sha256": "42d64f17dddf4a196bce7791457a94e30090c419d11ab411908e54f69f668013",
+      "source_commit": "c95fb8598791eb22b69c74bfcd60c31aa642c3bc"
+    },
+    "src/distillschedule/cli.py": {
+      "target": "src/distillschedule/cli.py",
+      "integrated_sha256": "c923887be77b7f88e379b56cce0b47bc09b4e4575e40927389c58b99ad0799a5",
+      "source_commit": "8a556b7e7fc41facf4bb0c833629b5646e033bdf"
+    },
+    "src/distillschedule/workloads/best_known/cli.py": {
+      "target": "src/distillschedule/workloads/best_known/cli.py",
+      "integrated_sha256": "6fa0cb58a2da28e67fe4aff207064d140b3f388b078767d56a607b5539f41b43",
+      "source_commit": "ea29129342741b54e59c4773e07454f541fadcc7"
+    },
+    "src/distillschedule/workloads/best_known/dispatch.py": {
+      "target": "src/distillschedule/workloads/best_known/dispatch.py",
+      "integrated_sha256": "97f9af9827c0edfce880ee0a1f4fb6b8d736eba2699309c348a614a91bc1fa98",
+      "source_commit": "c95fb8598791eb22b69c74bfcd60c31aa642c3bc"
+    },
+    "src/distillschedule/workloads/best_known/evidence.py": {
+      "target": "src/distillschedule/workloads/best_known/evidence.py",
+      "integrated_sha256": "9bba74500aff969d61e773649697d4413f5b4d1a3058ebe2d59d1eaa1a265e4d",
+      "source_commit": "c95fb8598791eb22b69c74bfcd60c31aa642c3bc"
+    },
+    "src/distillschedule/workloads/best_known/registry.py": {
+      "target": "src/distillschedule/workloads/best_known/registry.py",
+      "integrated_sha256": "fa9c005a11bc9c05efbcde6a1a3166f32c1ba678162f2dac61ed9eb4784aa734",
+      "source_commit": "c95fb8598791eb22b69c74bfcd60c31aa642c3bc"
+    },
+    "tests/test_refactor_best_known.py": {
+      "target": "tests/test_refactor_best_known.py",
+      "integrated_sha256": "f62abef7b515b7e80adf113da66f25f16a8343fec9d1f5f0464a12a087c191bb",
+      "source_commit": "c95fb8598791eb22b69c74bfcd60c31aa642c3bc"
+    },
+    "configs/distillschedule/best_known/minimax_h3_grid1000_best.json": {
+      "target": "configs/distillschedule/best_known/minimax_h3_continuous_best.json",
+      "integrated_sha256": "b95e6787c33e84483cc373d68399ce382de5aa892653d26740e2751a96f410ff",
+      "source_commit": "c95fb8598791eb22b69c74bfcd60c31aa642c3bc"
+    },
+    "configs/distillschedule/best_known/registry.lock.json": {
+      "target": "configs/distillschedule/best_known/registry.lock.json",
+      "integrated_sha256": "2577f03c3edcaeabc8a7e4c07bd283b9526f1c799bc4d867137c359053f7b94e",
+      "source_commit": "c95fb8598791eb22b69c74bfcd60c31aa642c3bc"
+    },
+    "configs/distillschedule/best_known/assets_examples/minimax_h3_grid1000_best.json": {
+      "target": "configs/distillschedule/best_known/assets_examples/minimax_h3_continuous_best.json",
+      "integrated_sha256": "5fd45e43c679c0935d99de467c720a84c9142a34ae16863eaa372f3ede42238b",
+      "source_commit": "c95fb8598791eb22b69c74bfcd60c31aa642c3bc"
+    },
+    "scripts/distillschedule/analyze_livewan_crossscale_nsys.py": {
+      "target": "tools/profiling/analyze_livewan_crossscale_nsys.py",
+      "integrated_sha256": "c59ec7ed1ae7f8d91ff539165897b8e175a0863248e805a51851b9fb8576fe63",
+      "source_commit": "0e8cbe5c006fceda36a7547b3eda60d6daea1eb8"
+    },
+    "scripts/distillschedule/build_livewan_continuous_trace.py": {
+      "target": "tools/assets/build_livewan_continuous_trace.py",
+      "integrated_sha256": "cf30378967454a76926a5dd12eb92c1bad2d15ee05fe5d9d9d4cbd4754f996fa",
+      "source_commit": "0e8cbe5c006fceda36a7547b3eda60d6daea1eb8"
+    },
+    "scripts/distillschedule/build_livewan_crossscale_bootstrap.py": {
+      "target": "tools/assets/build_livewan_crossscale_bootstrap.py",
+      "integrated_sha256": "4ad660e38631c64299bfeaf60c0e1020932c2bfcfcd8605d95371f4b733c2f59",
+      "source_commit": "0e8cbe5c006fceda36a7547b3eda60d6daea1eb8"
+    },
+    "scripts/distillschedule/build_livewan_crossscale_profile_gate.py": {
+      "target": "tools/assets/build_livewan_crossscale_profile_gate.py",
+      "integrated_sha256": "c028acc2885aacbf5eab752c4ec14b06ab4ab5ef7a4ee7e912091cbb524c8d86",
+      "source_commit": "0e8cbe5c006fceda36a7547b3eda60d6daea1eb8"
+    },
+    "scripts/distillschedule/build_livewan_crossscale_trace.py": {
+      "target": "tools/assets/build_livewan_crossscale_trace.py",
+      "integrated_sha256": "c8dbc8742268ca42ff6912f23801fe9176303d92736f9c762641ea232751af3c",
+      "source_commit": "0e8cbe5c006fceda36a7547b3eda60d6daea1eb8"
+    },
+    "scripts/distillschedule/build_livewan_two_cycle_profile_gate.py": {
+      "target": "tools/assets/build_livewan_two_cycle_profile_gate.py",
+      "integrated_sha256": "d22f6fb6bdbf8a5f0cbc0e41cc53ca443bccd6350ce20cf744e6a96d075b1089",
+      "source_commit": "0e8cbe5c006fceda36a7547b3eda60d6daea1eb8"
+    },
+    "scripts/distillschedule/build_livewan_two_cycle_timing_gate.py": {
+      "target": "scripts/distillschedule/build_livewan_two_cycle_timing_gate.py",
+      "integrated_sha256": "c16145b9de1fa1195f7d64c15ce2b31c956a98a248fe632322c9f2769c11360f",
+      "source_commit": "ea29129342741b54e59c4773e07454f541fadcc7"
+    },
+    "scripts/distillschedule/canary_livewan_attention_checkpoint.py": {
+      "target": "benchmarks/kernels/canary_livewan_attention_checkpoint.py",
+      "integrated_sha256": "4150386ee28ec3c229c2cb9a2664127ed34e2318ca3ab7c084d4f2bbe00b6b68",
+      "source_commit": "0e8cbe5c006fceda36a7547b3eda60d6daea1eb8"
+    },
+    "scripts/distillschedule/canary_livewan_context_staging.py": {
+      "target": "benchmarks/kernels/canary_livewan_context_staging.py",
+      "integrated_sha256": "05093935fe78bf51d718f5fe45d7015609c34e499e7f0777ca48ab2400cf8705",
+      "source_commit": "0e8cbe5c006fceda36a7547b3eda60d6daea1eb8"
+    },
+    "scripts/distillschedule/canary_livewan_generator_gate.py": {
+      "target": "benchmarks/kernels/canary_livewan_generator_gate.py",
+      "integrated_sha256": "ef8ddac1cf5c082119911069f027789abdd2bcc138680af603c87c8667824fdb",
+      "source_commit": "0e8cbe5c006fceda36a7547b3eda60d6daea1eb8"
+    },
+    "scripts/distillschedule/canary_livewan_generator_modulation.py": {
+      "target": "benchmarks/kernels/canary_livewan_generator_modulation.py",
+      "integrated_sha256": "c604e9574bf412919701ae0489c8a8e51f0359eddd90df23605c6753557763a5",
+      "source_commit": "0e8cbe5c006fceda36a7547b3eda60d6daea1eb8"
+    },
+    "scripts/distillschedule/canary_livewan_generator_rms_epilogue.py": {
+      "target": "benchmarks/kernels/canary_livewan_generator_rms_epilogue.py",
+      "integrated_sha256": "dcadbe577c89007bafe935746393b5f3505a46c0b2609a793732ec0a6f099388",
+      "source_commit": "0e8cbe5c006fceda36a7547b3eda60d6daea1eb8"
+    },
+    "scripts/distillschedule/canary_livewan_rollout_cast_cache.py": {
+      "target": "benchmarks/kernels/canary_livewan_rollout_cast_cache.py",
+      "integrated_sha256": "7c00d3055748fce6e5b071b2a23390fe29efb6a8c7164700e592ac5d93557640",
+      "source_commit": "0e8cbe5c006fceda36a7547b3eda60d6daea1eb8"
+    },
+    "scripts/distillschedule/canary_livewan_score_rmsnorm.py": {
+      "target": "benchmarks/kernels/canary_livewan_score_rmsnorm.py",
+      "integrated_sha256": "74712134a76b24f54af60ce3c28b6a9270586be9d40a73190b414586fa04d5c7",
+      "source_commit": "0e8cbe5c006fceda36a7547b3eda60d6daea1eb8"
+    },
+    "scripts/distillschedule/compare_livewan_two_cycle_timing.py": {
+      "target": "scripts/distillschedule/compare_livewan_two_cycle_timing.py",
+      "integrated_sha256": "995195da89fbf7363560f31e228a845fb6ef7c54df04d5a9ea8a42928bc22edb",
+      "source_commit": "ea29129342741b54e59c4773e07454f541fadcc7"
+    },
+    "scripts/distillschedule/compare_livewan_two_cycle_trajectories.py": {
+      "target": "scripts/distillschedule/compare_livewan_two_cycle_trajectories.py",
+      "integrated_sha256": "494628453b43f68302f6d842bd9e5bd99eb73b02bc150bb198ce695c385aff6f",
+      "source_commit": "ea29129342741b54e59c4773e07454f541fadcc7"
+    },
+    "scripts/distillschedule/derive_livewan_continuous_bootstrap.py": {
+      "target": "tools/assets/derive_livewan_continuous_bootstrap.py",
+      "integrated_sha256": "4a600ef3467f05a32976b0e8732beb41c0c98885696dd0146f2e98f586026356",
+      "source_commit": "0e8cbe5c006fceda36a7547b3eda60d6daea1eb8"
+    },
+    "scripts/distillschedule/summarize_livewan_trajectory_world16.py": {
+      "target": "scripts/distillschedule/summarize_livewan_trajectory_world16.py",
+      "integrated_sha256": "75dc00bc44a3cc3f13a3a3c1f80a29c7bafb6d85f254296e3fc9043c1a06369d",
+      "source_commit": "ea29129342741b54e59c4773e07454f541fadcc7"
+    },
+    "scripts/distillschedule/summarize_livewan_two_cycle_timing_world16.py": {
+      "target": "scripts/distillschedule/summarize_livewan_two_cycle_timing_world16.py",
+      "integrated_sha256": "457ef009f01869a8b282586373ec9c959820f485642002f10128b86e20e82654",
+      "source_commit": "ea29129342741b54e59c4773e07454f541fadcc7"
+    },
+    "src/distillschedule/runtime/livewan_attention_checkpoint.py": {
+      "target": "src/distillschedule/runtime/livewan_attention_checkpoint.py",
+      "integrated_sha256": "cd5dc9fdeffc672734aeecf25ac0f7ee39ef28a9ed6a19e98d527ff9bee99ea6",
+      "source_commit": "ea29129342741b54e59c4773e07454f541fadcc7"
+    },
+    "src/distillschedule/runtime/livewan_generator_gate.py": {
+      "target": "src/distillschedule/runtime/livewan_generator_gate.py",
+      "integrated_sha256": "4490197597faa483c8f294fc8478cbc436e05870f67582acee1b22ef5dc57b52",
+      "source_commit": "ea29129342741b54e59c4773e07454f541fadcc7"
+    },
+    "src/distillschedule/runtime/livewan_generator_modulation.py": {
+      "target": "src/distillschedule/runtime/livewan_generator_modulation.py",
+      "integrated_sha256": "3375865d138f6a395694a592412d41fbbc0e08f064646e4e4ce3dc17dde66cff",
+      "source_commit": "ea29129342741b54e59c4773e07454f541fadcc7"
+    },
+    "src/distillschedule/runtime/livewan_generator_rms_epilogue.py": {
+      "target": "src/distillschedule/runtime/livewan_generator_rms_epilogue.py",
+      "integrated_sha256": "81b3eaa8a9ed2beb0a3033c68d9bc11ad091fb90d40365831d1c3552913d522f",
+      "source_commit": "ea29129342741b54e59c4773e07454f541fadcc7"
+    },
+    "tests/test_refactor_best_known_livewan_c34.py": {
+      "target": "tests/test_refactor_best_known_livewan_c34.py",
+      "integrated_sha256": "59d9cd154628ba52e0562d6e5bd6872796db006648d877c66785559ccbdfa11a",
+      "source_commit": "c95fb8598791eb22b69c74bfcd60c31aa642c3bc"
+    },
+    "tests/test_refactor_livewan_attention_checkpoint.py": {
+      "target": "tests/test_refactor_livewan_attention_checkpoint.py",
+      "integrated_sha256": "6f18424d7e40d2d01b84ea2cffddebe2dcd3ab1b4b418df9e591e305d3059570",
+      "source_commit": "ea29129342741b54e59c4773e07454f541fadcc7"
+    },
+    "tests/test_refactor_livewan_b1_attribution.py": {
+      "target": "tests/test_refactor_livewan_b1_attribution.py",
+      "integrated_sha256": "c7e3e06bad84a91a6fa8fd61a1b1606927a4b30397c99319ee55993126d686fc",
+      "source_commit": "0bd8822d6282e505143015e4cf914d9b0c2c8013"
+    },
+    "tests/test_refactor_livewan_c33_integration.py": {
+      "target": "tests/test_refactor_livewan_c33_integration.py",
+      "integrated_sha256": "aa442761dcd8d7dc42aeedba71300d572047724adeb52609d020bc380c04c1f9",
+      "source_commit": "ea29129342741b54e59c4773e07454f541fadcc7"
+    },
+    "tests/test_refactor_livewan_context_staging.py": {
+      "target": "tests/test_refactor_livewan_context_staging.py",
+      "integrated_sha256": "d1bc6dccaf4171233cbea58b79dd4164de9436151c0280892d8efa7c4a001c29",
+      "source_commit": "0e8cbe5c006fceda36a7547b3eda60d6daea1eb8"
+    },
+    "tests/test_refactor_livewan_crossscale_profile.py": {
+      "target": "tests/test_refactor_livewan_crossscale_profile.py",
+      "integrated_sha256": "2dd0ba4ebbe31658dfb280cecdba81c356c49bba728c812ee356aebbc2f71895",
+      "source_commit": "0e8cbe5c006fceda36a7547b3eda60d6daea1eb8"
+    },
+    "tests/test_refactor_livewan_generator_cast_square.py": {
+      "target": "tests/test_refactor_livewan_generator_cast_square.py",
+      "integrated_sha256": "7b01c4f1123b8ddfbdd32422704bfb3ae4e19d133f22ac7ac03fda822134aace",
+      "source_commit": "0e8cbe5c006fceda36a7547b3eda60d6daea1eb8"
+    },
+    "tests/test_refactor_livewan_generator_gate.py": {
+      "target": "tests/test_refactor_livewan_generator_gate.py",
+      "integrated_sha256": "3e348e9764ac1732824a6a04501f46ea169ef929577cdf0afeff83da20c21831",
+      "source_commit": "0e8cbe5c006fceda36a7547b3eda60d6daea1eb8"
+    },
+    "tests/test_refactor_livewan_generator_modulation.py": {
+      "target": "tests/test_refactor_livewan_generator_modulation.py",
+      "integrated_sha256": "36338ea144784604be793ffaac6cda8bb69b4168da1fb3c82e7b94c996e4a077",
+      "source_commit": "ea29129342741b54e59c4773e07454f541fadcc7"
+    },
+    "tests/test_refactor_livewan_generator_rms_epilogue.py": {
+      "target": "tests/test_refactor_livewan_generator_rms_epilogue.py",
+      "integrated_sha256": "2f9ab9c7c80e052f74bb095c1e2e24d2496a4f770020102782c5a37679555b05",
+      "source_commit": "8e80fa71facb8a4d8755772feee7625595d8b77b"
+    },
+    "tests/test_refactor_livewan_rollout_cast_cache.py": {
+      "target": "tests/test_refactor_livewan_rollout_cast_cache.py",
+      "integrated_sha256": "c1d2de5b4d2d1e9e63fd82f66fb5f40c5cb24fd13ede16513bd04f2792a57404",
+      "source_commit": "8e80fa71facb8a4d8755772feee7625595d8b77b"
+    },
+    "tests/test_refactor_livewan_trajectory.py": {
+      "target": "tests/test_refactor_livewan_trajectory.py",
+      "integrated_sha256": "a53ed21da6c5febdc1c0d2971105671c6fbdf8a77565d9514e0fa7df05590c9d",
+      "source_commit": "0e8cbe5c006fceda36a7547b3eda60d6daea1eb8"
+    },
+    "tests/test_refactor_livewan_two_cycle_profile.py": {
+      "target": "tests/test_refactor_livewan_two_cycle_profile.py",
+      "integrated_sha256": "747f16b9213d96113485220072e35c7d8892a7cd15d20ec21794413e9df0ac1b",
+      "source_commit": "0e8cbe5c006fceda36a7547b3eda60d6daea1eb8"
+    },
+    "tests/test_refactor_livewan_two_cycle_timing.py": {
+      "target": "tests/test_refactor_livewan_two_cycle_timing.py",
+      "integrated_sha256": "a85057c901e2c513d63368a621a70b85932c0b2970921ca687d048c2526dbc5e",
+      "source_commit": "087779ad926cea001e191cf0c2bb03445843bb10"
+    },
+    "scripts/distillschedule/probe_static_fsdp2_full5_world16.py": {
+      "target": "scripts/distillschedule/probe_static_fsdp2_full5_world16.py",
+      "integrated_sha256": "62b75513dbb4d5f30a5629fa12f9a1ddb11499bd9d32d4ef86343fd182db27bf",
+      "source_commit": "90cb5d3b888ab128049fd5397420356c448aff2c"
+    },
+    "scripts/distillschedule/run_wan13b_fair_world16.py": {
+      "target": "scripts/distillschedule/run_wan13b_fair_world16.py",
+      "integrated_sha256": "ae97b970f68c84f262c0300d1d14545c9448ef242109f54f9a49ddf4d44c5b8a",
+      "source_commit": "c95fb8598791eb22b69c74bfcd60c31aa642c3bc"
+    }
+  },
+  "retired_imports": [
+    "src/distillschedule/backends/training/minimax_h3/grid_adaln.py",
+    "src/distillschedule/backends/training/minimax_h3/grid_contract.py",
+    "src/distillschedule/backends/training/minimax_h3/grid_entrypoint.py",
+    "src/distillschedule/backends/training/minimax_h3/grid_timestep_compat.py",
+    "tests/test_refactor_best_known.py",
+    "tests/test_refactor_best_known_livewan_c34.py",
+    "tests/test_refactor_livewan_attention_checkpoint.py",
+    "tests/test_refactor_livewan_b1_attribution.py",
+    "tests/test_refactor_livewan_c30_composition.py",
+    "tests/test_refactor_livewan_c31_integration.py",
+    "tests/test_refactor_livewan_c32_integration.py",
+    "tests/test_refactor_livewan_c33_integration.py",
+    "tests/test_refactor_livewan_c34_integration.py",
+    "tests/test_refactor_livewan_context_staging.py",
+    "tests/test_refactor_livewan_crossscale_profile.py",
+    "tests/test_refactor_livewan_cuda_setup.py",
+    "tests/test_refactor_livewan_failure_receipt.py",
+    "tests/test_refactor_livewan_generator_cast_square.py",
+    "tests/test_refactor_livewan_generator_gate.py",
+    "tests/test_refactor_livewan_generator_modulation.py",
+    "tests/test_refactor_livewan_generator_rms_epilogue.py",
+    "tests/test_refactor_livewan_rollout_cast_cache.py",
+    "tests/test_refactor_livewan_score_rmsnorm.py",
+    "tests/test_refactor_livewan_teardown_visibility.py",
+    "tests/test_refactor_livewan_trajectory.py",
+    "tests/test_refactor_livewan_two_cycle_profile.py",
+    "tests/test_refactor_livewan_two_cycle_timing.py",
+    "tests/test_refactor_trajectory_coarse.py",
+    "tests/test_refactor_trajectory_state_sketch.py"
+  ],
+  "history": {
+    "revision": "19544630305c1ad03c30af1f4fec863af1caf68c",
+    "path": "docs/workloads/source_layout.lock.json"
+  }
+}

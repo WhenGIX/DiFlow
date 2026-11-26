@@ -1,0 +1,7 @@
+id,name,baseline_reference_s,resident_offload_reference_s,realhf_like_reference_s,system_s,reference_ratio
+W1,MiniMax H3 PDMD,912,OOM,1054,767,1.19
+W2,MiniMax H3 DMD2,320,932,353,256,1.25
+W3,Wan2.1 DMD,36,35,39,21,1.76
+W4,Wan2.1 SF-DMD,84,69,62,42,1.98
+W5,Helios Hier-DMD,109,689,156,83,1.32
+W6,Helios Hier-DMD2,164,762,162,117,1.41

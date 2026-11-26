@@ -1,0 +1,270 @@
+"""Execute the existing planner's measured selection across training cycles.
+
+The initial plan retains its exact source/state/input admission. Subsequent
+cycles bind the admitted schedule to new data and increasing logical versions;
+they do not pretend the evolving model is the original calibration snapshot.
+"""
+from __future__ import annotations
+from copy import deepcopy
+from contextlib import nullcontext
+import json
+from pathlib import Path
+
+from .config import digest
+from .compatibility import EXECUTION_CONTRACT, execution_source_compatible
+
+
+def cycle_structure(workload):
+    from distillschedule.open_workload.torch_backend import code_signature, unwrap_module
+    import torch
+
+    def shapes(value):
+        if isinstance(value, torch.Tensor):
+            return {"shape": list(value.shape), "dtype": str(value.dtype), "device": value.device.type}
+        if isinstance(value, dict):
+            return {key: shapes(item) for key, item in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [shapes(item) for item in value]
+        return value
+
+    program = workload.program.to_dict()
+    program["initial_versions"] = dict.fromkeys(program["initial_versions"], 0)
+    for call in program["calls"]:
+        # A cycle index is the only explicitly relocatable Call attribute.
+        if "cycle" in call["attributes"]:
+            call["attributes"]["cycle"] = 0
+    def model_class(model):
+        from torch.distributed.fsdp import FSDPModule
+        # fully_shard adds a runtime subclass; the model's actual source remains
+        # the original class, while the separately bound policy owns the layout.
+        return next(cls for cls in type(model).__mro__ if issubclass(cls, torch.nn.Module)
+                    and not issubclass(cls, FSDPModule)) if isinstance(model, FSDPModule) else type(model)
+
+    modules = {key: {"class": code_signature(model_class(unwrap_module(model))),
+                     "parameters": {name: {**shapes(p), "requires_grad": p.requires_grad}
+                                    for name, p in unwrap_module(model).named_parameters(remove_duplicate=False)}}
+               for key, model in workload.state.items() if isinstance(model, torch.nn.Module)}
+    from distillschedule.open_workload.owner_execution import workload_inventory
+    owners = workload_inventory(workload)
+    from distillschedule.open_workload.collective_owner import present, admit
+    collective = admit(workload) if present(workload) else None
+    return digest({"program": program, "modules": modules, "feeds": shapes(dict(workload.feeds)),
+                   "bindings": {key: code_signature(fn) for key, fn in workload.bindings.items()},
+                   "immutable_modules": workload.immutable_modules,
+                   **({"owner_execution": owners} if owners else {}),
+                   **({"native_collective_owner": collective} if collective else {}),
+                   "replica_semantics": (workload.replica_semantics.to_dict()
+                                         if workload.replica_semantics is not None else None)})
+
+
+class CyclePolicy:
+    def __init__(self, execution):
+        self.execution = dict(execution)
+        self.bound = None
+        self.session = None
+        self._owner_readmission = False
+        self._active_source = None
+
+    def _semantics(self, workload, implementation):
+        from .semantics import execution_semantics
+        return execution_semantics(workload, implementation)
+
+    def _resident(self, workload):
+        if 'resident_budget' not in self.execution:
+            return None
+        from .resident import ResidentTrainingBudget, for_workload
+        budget = ResidentTrainingBudget.parse(self.execution['resident_budget'], device=workload.device)
+        return for_workload(workload, budget)
+
+    def _paired(self, backend, implementation, order, *, admission, output, resumed=False):
+        from distillschedule.open_workload.planning import paired_execution, _publish_resident_success
+        if admission is None:
+            return paired_execution(backend, implementation, order, persistent=True)
+        with backend.resident_trial(admission.budget.trial) as trial:
+            session, outputs, gate, native = paired_execution(backend, implementation, order,
+                persistent=True, resident_trial=trial)
+            if gate['status'] != 'PASS':
+                raise ValueError('owner execution numerical admission needs review; training did not commit')
+            session.receipt.update(reference_gate=gate, native_capability_evidence=native,
+                                   resident_trial=trial.receipt)
+            path = Path(output) / ('resume-owner-admission.json' if resumed else 'owner-admission.json')
+            trial.accept(publish=lambda receipt: _publish_resident_success(path,
+                dict(reference_gate=gate, native_capability_evidence=native,
+                     resident_trial=receipt, resumed=resumed)))
+        return session, outputs, gate, native
+
+    def restore(self, value):
+        if not isinstance(value, dict) or value.get("schema_version") != "distillschedule.cycle_policy.v1":
+            raise ValueError("checkpoint has no admitted cycle policy")
+        self.bound = deepcopy(value)
+        from distillschedule.open_workload.owner_execution import selected
+        self._owner_readmission = selected(self.bound['implementation'])
+
+    def _admit_owner_request(self):
+        from distillschedule.open_workload.owner_execution import selected
+        requested = self.execution.get('implementation', {})
+        if self.bound.get('resident_budget') != self.execution.get('resident_budget'):
+            raise ValueError('checkpoint resident construction/trial budget changed')
+        if (self.bound['mode'] == 'manual'
+                and (selected(self.bound['implementation']) or selected(requested))
+                and requested != self.bound['implementation']):
+            raise ValueError('checkpoint owner execution policy changed')
+
+    def prepare_resume(self, workload):
+        """Install the saved physical layout before restoring its local shards."""
+        from distillschedule.open_workload.execution import ExecutionBackend
+        from distillschedule.open_workload.planning import source_identity
+        backend = ExecutionBackend(workload, state_audit_every_cycles=self.execution.get('state_audit_every_cycles', 50))
+        self._resident(workload)
+        def admit():
+            self._admit_owner_request()
+            from .semantics import execution_semantics
+            current_semantics = execution_semantics(workload, self.bound["implementation"])
+            if (not execution_source_compatible(self.bound, source_identity(),
+                    current_semantics=current_semantics)
+                    or self.bound["structure"] != cycle_structure(workload)
+                    or self.bound["mode"] != self.execution.get("mode", "reference")):
+                raise ValueError("checkpoint execution source or structure changed")
+        backend.validated(admit, "checkpoint execution policy admission")
+        self._active_source = source_identity()
+        self.session = backend.session(self.bound["implementation"], copy_state=False, persistent=True)
+        return self.session
+
+    def run(self, workload, output):
+        session, outputs = self._run(workload, output)
+        # Paired/saved-plan qualification creates its own C1 session. It always
+        # receives a full audit; adopt the public cadence for later owned cycles.
+        session.state_audit_every_cycles = self.execution.get('state_audit_every_cycles', 50)
+        return session, outputs
+
+    def _run(self, workload, output):
+        from distillschedule.open_workload.execution import ExecutionBackend
+        from distillschedule.open_workload.planning import source_identity
+        backend = ExecutionBackend(workload, state_audit_every_cycles=self.execution.get('state_audit_every_cycles', 50))
+        admission = self._resident(workload)
+        resident_budget = admission.budget.trial if admission is not None else None
+        def admit():
+            current_structure = cycle_structure(workload)
+            if self.bound is not None:
+                self._admit_owner_request()
+                if (source_identity() != (self._active_source or self.bound["source"])
+                        or self.bound["structure"] != current_structure):
+                    raise ValueError("training policy source, workload, model precision or input structure changed")
+                if self.bound["mode"] != self.execution.get("mode", "reference"):
+                    raise ValueError("checkpoint execution policy changed")
+                if self.session is not None:
+                    self.session.bind_cycle(workload, graph=backend.graph(self.bound["implementation"]))
+            return current_structure
+        # Only local validation/rebinding belongs inside checked. Installing a
+        # layout and running its lifecycle issue collectives of their own.
+        current_structure = backend.validated(admit, "training cycle policy admission")
+        if self.bound is None:
+            mode = self.execution.get("mode", "reference")
+            if mode in ("auto", "plan"):
+                from distillschedule.open_workload.planning import calibrate, plan, run
+                if mode == "auto":
+                    limit = self.execution.get("memory_limit_bytes")
+                    if type(limit) is not int or limit <= 0:
+                        raise ValueError("auto training requires explicit memory_limit_bytes")
+                    root = Path(output) / "planning"
+                    backend.mkdir(root)
+                    calibrate(workload, root / "calibration",
+                              max_candidates=self.execution.get("max_candidates", 4),
+                              samples=self.execution.get("samples", 1),
+                              max_program_runs=self.execution.get("max_program_runs", 16),
+                              profile_hardware=False, resident_budget=resident_budget)
+                    document = backend.select_plan(lambda: plan(root / "calibration/calibration.json", memory_limit_bytes=limit,
+                                    max_states=self.execution.get("max_states", 50000)))
+                    plan_path = root / "selected-plan.json"
+                    backend.publish(plan_path, document)
+                else:
+                    plan_path = Path(self.execution["plan"])
+                    document = json.loads(plan_path.read_text())
+                report, session, outputs = run(workload, plan_path, Path(output) / "plan-admission", persistent=True,
+                                               resident_budget=resident_budget)
+                if report["reference_gate"]["status"] != "PASS":
+                    raise ValueError("selected plan numerical admission needs review; training did not commit")
+                self.bound = {"schema_version": "distillschedule.cycle_policy.v1",
+                              "mode": mode, "source": source_identity(), "structure": current_structure,
+                              "resume_contract": EXECUTION_CONTRACT,
+                              "execution_semantics": self._semantics(workload, document["selected"]["implementation"]),
+                              "implementation": deepcopy(document["selected"]["implementation"]),
+                              "order": list(document["selected"]["order"]),
+                              "plan_sha256": document["plan_sha256"],
+                              "memory_limit_bytes": document["memory_limit_bytes"],
+                              "initial_reference_gate": report["reference_gate"]}
+                if admission is not None:
+                    self.bound['resident_budget'] = admission.budget.to_dict()
+                self.session = session
+                return session, outputs
+            construction_owned = False
+            if (backend.distributed and not backend.native_owner and mode == "manual"
+                    and "implementation" in self.execution):
+                from distillschedule.open_workload.sharded import manual_construction_handoff
+                construction_owned = manual_construction_handoff(workload, self.execution["implementation"])
+            if construction_owned:
+                # A certificate, not a flag: all native shards have already
+                # passed collective ownership admission. No unused default is
+                # inventoried or cloned. Ordinary dense/manual/auto paths keep
+                # their original inventory and native descriptor gates.
+                implementation = self.execution["implementation"]
+            else:
+                default = backend.inventory(1)["candidates"][0]
+                implementation = self.execution.get("implementation", default) if mode == "manual" else default
+            order = self.execution.get("order")
+            from distillschedule.open_workload.owner_execution import selected
+            gate = {"status": "NOT_RUN", "reason": "explicit user strategy"}
+            if selected(implementation):
+                session, outputs, gate, native = self._paired(backend, implementation, order,
+                    admission=admission, output=output)
+                if gate['status'] != 'PASS':
+                    raise ValueError('owner execution numerical admission needs review; training did not commit')
+                session.receipt.update(reference_gate=gate, native_capability_evidence=native)
+            else:
+                session = backend.session(implementation, copy_state=False, persistent=True)
+                with admission.continuation() if admission is not None else nullcontext():
+                    outputs = session.run(order)
+            self.bound = {"schema_version": "distillschedule.cycle_policy.v1", "mode": mode,
+                          "source": source_identity(), "structure": current_structure,
+                          "resume_contract": EXECUTION_CONTRACT,
+                          "execution_semantics": self._semantics(workload, implementation),
+                          "implementation": deepcopy(implementation),
+                          "order": list(order or (*[c.id for c in workload.program.calls], "__open_finish__")),
+                          "initial_reference_gate": gate}
+            if admission is not None:
+                self.bound['resident_budget'] = admission.budget.to_dict()
+            self.session = session
+            return session, outputs
+        implementation = self.bound["implementation"]
+        if self._owner_readmission:
+            session, outputs, gate, native = self._paired(backend, implementation, self.bound['order'],
+                admission=admission, output=output, resumed=True)
+            if gate['status'] != 'PASS':
+                raise ValueError('resumed owner execution numerical admission needs review; training did not commit')
+            session.receipt.update(reference_gate=gate, native_capability_evidence=native,
+                                   owner_resume_reference_admission=True)
+            self.session, self._owner_readmission = session, False
+            return session, outputs
+        # Session applies the actual capability predicates. A user-admitted
+        # manual combination need not appear in a truncated search inventory.
+        if self.session is None:
+            session = backend.session(implementation, copy_state=False, persistent=True)
+            self.session = session
+        else:
+            session = self.session
+        if session.device.type == "cuda" and "memory_limit_bytes" in self.bound:
+            from distillschedule.open_workload.hardware_probe import plan_memory_limit
+            plan_memory_limit(session.device, distributed=backend.distributed, consensus=backend.consensus,
+                              requested=self.bound["memory_limit_bytes"], reserve_bytes=0)
+        with admission.continuation() if admission is not None else nullcontext():
+            outputs = session.run(self.bound["order"])
+            from distillschedule.open_workload.owner_execution import selected
+            if selected(implementation):
+                from distillschedule.open_workload.checkpoint_policy import native_effect_evidence
+                native = backend.consensus(native_effect_evidence(implementation, session.effects))
+                if not all(row['active'] for row in native):
+                    raise ValueError('selected native capability was not exercised on every rank')
+                session.receipt['native_capability_evidence'] = native
+        if admission is not None:
+            session.receipt['resident_lifecycle'] = deepcopy(admission.receipt)
+        return session, outputs

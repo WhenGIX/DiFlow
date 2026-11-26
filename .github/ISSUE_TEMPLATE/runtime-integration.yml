@@ -1,0 +1,36 @@
+name: Bug report
+description: Report a problem with installation, training, a recipe or the optimizer Skill.
+title: "[bug] "
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Describe the expected behavior and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How can we reproduce it?
+      description: Include the command and a small configuration or example. For the Skill, include the query.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: DiFlow revision, Python/PyTorch versions, model/recipe, operating system, GPU and node count when relevant.
+      render: text
+  - type: textarea
+    id: logs
+    attributes:
+      label: Error or logs
+      description: Paste a short error and traceback. Remove tokens, credentials and private data.
+      render: text
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Recent changes, attempted fixes, or relevant plan/run identifiers, if available.

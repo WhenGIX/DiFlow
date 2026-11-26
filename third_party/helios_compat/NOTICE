@@ -1,0 +1,23 @@
+Helios A100 compatibility source recovery
+
+Helios upstream: https://github.com/PKU-YuanGroup/Helios
+Original source notices include Copyright 2025 The Helios Team and
+The HuggingFace Team. All rights reserved.
+
+The source files are distributed under the included Apache License, Version 2.0.
+The recovered snapshot includes DistillSchedule compatibility modifications,
+including device-resident chunked residual policy, trace replay, pre-cast loading
+and historical runtime helpers. It must not be represented as unmodified upstream.
+
+Recovered compatibility commit:
+8b15dede4449ea0363600ab82a0db719d054a732
+
+2026-09-05: the original bytes were relocated into source/ and reference/ and a
+manifest, integrity verifier and integration documentation were added.
+No model or training source bytes were edited during this relocation.
+Source copyrights and the original license are retained.
+
+2026-10-30: DMD-System modified source/helios/utils/utils_helios_post.py.
+Two stored rollout aliases are detached because their only consumer runs under
+torch.no_grad. Active rollout, consistency and generated-history gradient paths
+are retained. source_manifest.json records both original and modified identities.

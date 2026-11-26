@@ -1,0 +1,676 @@
+"""Persistent public training, backed by the existing Program runtime.
+
+Algorithms still own their mathematical forwards, losses and update hooks.
+This layer owns data progress, complete-cycle persistence and user artifacts.
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import random
+import time
+from dataclasses import replace
+from contextlib import ExitStack
+from pathlib import Path
+
+from distillschedule.workloads.best_known.registry import file_sha256
+
+from . import distributed
+from .adapters import InferenceProjection, ModelComponents
+from .checkpoint import (
+    CheckpointPolicy,
+    _read_collective_checkpoint,
+    cpu_tree,
+    read_checkpoint,
+    read_manifest,
+    prune_checkpoints,
+    restore_checkpoint,
+    save_checkpoint,
+    unpack_state,
+)
+from .config import TrainingConfig, digest
+from .plugins import load_callable
+from .policy import CyclePolicy, cycle_structure
+from .data_streams import training_data, training_sampling, data_progress, validate_data_progress
+from .validation import Validation, admit_scope
+
+
+def _json(path, value):
+    path = Path(path)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(json.dumps(value, indent=2, sort_keys=True, allow_nan=False) + "\n")
+    os.replace(temporary, path)
+
+
+def _append_json(path, value):
+    with Path(path).open("a") as stream:
+        stream.write(json.dumps(value, sort_keys=True, allow_nan=False) + "\n")
+
+
+def _seed(seed, *, device=None):
+    import torch
+    random.seed(seed)
+    if device is None:
+        torch.manual_seed(seed)
+    else:
+        # Explicit placement must not seed every visible CUDA generator.
+        torch.random.default_generator.manual_seed(seed)
+        owned = torch.device(device)
+        if owned.type == "cuda":
+            with torch.cuda.device(owned):
+                torch.cuda.manual_seed(seed)
+    try:
+        import numpy as np
+        np.random.seed(seed % 2**32)
+    except ImportError:
+        pass
+
+
+def _source():
+    from distillschedule.open_workload.planning import source_identity
+    root = Path(__file__).parent
+    files = {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(root.glob("*.py"))}
+    data = root.parent / "data"
+    files.update({"data/" + path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+                  for path in sorted(data.glob("*.py"))})
+    return digest({"runtime": source_identity(), "lifecycle": files})
+
+
+def _model_parameters(config):
+    """Effective factory arguments; device alone is relocatable for inference."""
+    import torch
+    parameters = dict(config.model.get("parameters", {}))
+    device = config.trainer.get("device", "cpu")
+    if device == "cuda":
+        device = "cuda:" + str(torch.cuda.current_device())
+    parameters.setdefault("device", device)
+    parameters.setdefault("seed", config.trainer.get("seed", 0))
+    return parameters
+
+
+def _construct_model(config, *, source=None, include_factory=False):
+    factory, model_source = load_callable(config.model["factory"])
+    if source is not None and (model_source["sha256"] != source["sha256"]
+                              or not _same_factory(model_source["reference"], source["reference"])):
+        raise ValueError("export model factory source changed")
+    parameters = _model_parameters(config)
+    admission = None
+    budget = None
+    hook = getattr(factory, 'admit_construction', None)
+    if 'resident_budget' in config.execution:
+        from .resident import ResidentTrainingBudget
+        budget = ResidentTrainingBudget.parse(config.execution['resident_budget'], device=parameters['device'])
+        if not callable(hook):
+            raise ValueError('model factory has no resident preconstruction provider')
+    if callable(hook):
+        admission = hook(parameters=parameters, request=config, budget=budget)
+    if budget is not None and admission is None:
+        raise ValueError('model factory declined resident preconstruction admission')
+    components = None
+    try:
+        construct_owned = getattr(admission, 'construct', None)
+        components = construct_owned(factory, parameters) if callable(construct_owned) else factory(parameters)
+        if not isinstance(components, ModelComponents):
+            raise ValueError("model factory must return ModelComponents")
+        components.validate()
+        if admission is not None:
+            admission.attach(components)
+    except BaseException:
+        # A returned provider is already ours, even if its contract is invalid.
+        # Do not let an invalid close field mask its original validation error.
+        try:
+            if isinstance(components, ModelComponents) and callable(components.close):
+                components.close()
+        finally:
+            if admission is not None:
+                admission.close()
+        raise
+    if admission is not None:
+        original_close = components.close
+        def close():
+            try:
+                if original_close is not None:
+                    original_close()
+            finally:
+                admission.close()
+        components.close = close
+    return (components, model_source, factory) if include_factory else (components, model_source)
+
+
+def _same_factory(current, original):
+    if current == original:
+        return True
+    current_path, _, current_symbol = current.rpartition(":")
+    original_path, _, original_symbol = original.rpartition(":")
+    # Inference alone permits an explicit relocation of byte-identical .py
+    # adapters. Checkpoint identity and package/module references stay exact.
+    return current_path.endswith(".py") and original_path.endswith(".py") and current_symbol == original_symbol
+
+
+def construct(config, *, include_validation=False):
+    from .catalog import validate_compatibility
+    validate_compatibility(config.model, config.algorithm, config.trainer, config.execution)
+    dataset = training_data(config, world_size=distributed.rank_world()[1])
+    _seed(config.trainer.get("seed", 0), device=config.trainer.get("device", "cpu"))
+    components, model_source, factory = _construct_model(config, include_factory=True)
+    try:
+        algorithm, algorithm_source = load_callable(config.algorithm["factory"])
+        if components.admit_training is not None:
+            components.admit_training(state=components.state, request=config,
+                                      prepared_identity=dataset.identity, prepared_manifest=dataset.manifest)
+        validation = Validation.prepare(config, components)
+        from .compatibility import TRAINING_CONTRACT
+        from .semantics import training_semantics
+        identity = {"config": config.identity, "dataset": dataset.identity, "model": model_source,
+                    "algorithm": algorithm_source, "framework": _source(),
+                    "resume_contract": TRAINING_CONTRACT,
+                    "training_semantics": training_semantics(factory, algorithm, components.state),
+                    "model_metadata": dict(components.metadata)}
+        if validation is not None:
+            identity["validation"] = validation.identity
+        if config.execution.get("mode") == "plan":
+            identity["input_plan_sha256"] = hashlib.sha256(Path(config.execution["plan"]).read_bytes()).hexdigest()
+        result = (components, dataset, algorithm, identity)
+    except BaseException:
+        # Successful construction transfers lifetime to the public invocation.
+        if components.close is not None:
+            components.close()
+        raise
+    return (*result, validation) if include_validation else result
+
+
+def build_cycle(config, components, dataset, algorithm, *, cycle, cursor, versions=None):
+    """Build from a physical manifest index; training resolves sampling first."""
+    import torch
+
+    from distillschedule.open_workload.torch_backend import Workload
+    if not hasattr(dataset, 'cycle_sample') and cursor >= len(dataset):
+        raise ValueError("prepared input exhausted; add samples instead of silently recycling")
+    feeds = dataset.cycle_sample(cursor) if hasattr(dataset, 'cycle_sample') else dataset.sample(cursor)
+    device = config.trainer.get("device", "cpu")
+    from torch.utils._pytree import tree_map
+    feeds = tree_map(lambda value: value.to(device) if isinstance(value, torch.Tensor) else value, feeds)
+    seed = int(digest({"seed": config.trainer.get("seed", 0), "cycle": cycle})[:15], 16)
+    workload = algorithm(components, feeds, dict(config.algorithm.get("parameters", {})), cycle, seed)
+    if not isinstance(workload, Workload):
+        raise ValueError("algorithm factory must return an existing Workload for one cycle")
+    workload.validate()
+    for name, value in components.state.items():
+        if name not in workload.state or workload.state[name] is not value:
+            raise ValueError(f"algorithm must use the owned model state: {name}")
+    if versions is not None:
+        if set(versions) != set(workload.state):
+            raise ValueError("algorithm changed logical state between cycles")
+        workload.program = replace(workload.program, initial_versions=dict(versions))
+    return workload
+
+
+def _metrics(outputs):
+    import torch
+    return {str(name): float(value.detach().cpu()) for name, value in outputs.items()
+            if isinstance(value, torch.Tensor) and value.numel() == 1}
+
+
+def _training_metrics(components, outputs):
+    """Collect original host losses without flattening control receipts or tensors.
+
+    Adapter callbacks are trusted, read-only functions of the actual outputs.
+    Explicit Python floats avoid hidden tensor coercion or new GPU readbacks.
+    """
+    import math
+
+    result = _metrics(outputs)
+    if components.collect_metrics is None:
+        return result
+    extra = components.collect_metrics(outputs)
+    if not isinstance(extra, dict) or not all(
+            isinstance(key, str) and key and type(value) is float and math.isfinite(value)
+            for key, value in extra.items()):
+        raise ValueError("adapter metric collection requires named finite Python floats")
+    if result.keys() & extra.keys():
+        raise ValueError("adapter metric names collide with existing scalar metrics")
+    return {**result, **extra}
+
+
+def _finite(state, outputs):
+    from .finite import FiniteCheck
+    return FiniteCheck()(state, outputs)
+
+
+def _preflight_output(config):
+    root = Path(config.trainer['output_dir'])
+    if os.path.lexists(root):
+        raise FileExistsError(f'training output already exists: {root}')
+    parent = root.parent
+    while not parent.exists() and parent != parent.parent:
+        parent = parent.parent
+    if not parent.is_dir():
+        raise NotADirectoryError(f'training output parent is not a directory: {parent}')
+    if not os.access(parent, os.W_OK | os.X_OK):
+        raise PermissionError(f'training output parent is not writable: {parent}')
+
+
+def train(config: TrainingConfig):
+    with distributed.context(config):
+        return _train(config)
+
+
+def _checked_construct(config, label, *, include_validation=False):
+    local = None
+
+    def acquire():
+        nonlocal local
+        local = construct(config, include_validation=include_validation)
+        return local
+
+    try:
+        return distributed.checked(acquire, label)
+    except BaseException:
+        # A peer can reject construction after our local provider was returned,
+        # but before the invocation can transfer it to its managed scope.
+        if local is not None:
+            with local[0].managed():
+                raise
+        raise
+
+
+def _train(config: TrainingConfig):
+    # Reject unsupported collective validation before constructing any model,
+    # installing a wrapper, updating state or creating output.
+    started = time.perf_counter()
+    distributed.checked(lambda: admit_scope(config), "validation scope admission")
+    distributed.admit_run_controls(config)
+    distributed.checked(lambda: _preflight_output(config), "training output preflight")
+    components, dataset, algorithm, identity, validation = _checked_construct(
+        config, "training construction", include_validation=True)
+    with components.managed():
+        return _train_owned(config, components, dataset, algorithm, identity, validation,
+                            job_started=started)
+
+
+def _train_owned(config, components, dataset, algorithm, identity, validation, *, job_started=None):
+    job_started = time.perf_counter() if job_started is None else job_started
+    rank, world = distributed.rank_world()
+    if any(row != identity for row in distributed.gather(identity)):
+        raise ValueError("ranks disagree on training configuration, source or dataset identity")
+    sampling = training_sampling(config, dataset, world_size=world)
+    sampling.admit_cycles(config.trainer["cycles"])
+    start_cycle = cursor = 0
+    versions = None
+    policy = CyclePolicy(config.execution)
+    if config.trainer.get("resume_from"):
+        # Build the original declared state shape before restoring modules,
+        # optimizer/scheduler state, history and the exact next data position.
+        workload = distributed.checked(lambda: build_cycle(
+            config, components, dataset, algorithm, cycle=0,
+            cursor=sampling.position(rank).sample_index), "resume cycle construction")
+        metadata = distributed.checked(lambda: read_manifest(config.trainer["resume_from"], identity=identity),
+                                       "checkpoint reading")
+        distributed.checked(lambda: sampling.validate_progress(metadata["cycle"], metadata["cursor"]),
+                            "checkpoint sampling progress admission")
+        distributed.checked(lambda: validate_data_progress(dataset, metadata), 'checkpoint input stream admission')
+        policy.restore(metadata["policy"])
+        del metadata
+        session = policy.prepare_resume(workload)
+        restored = restore_checkpoint(config.trainer["resume_from"], session.state, identity=identity)
+        start_cycle, cursor, versions = restored["cycle"], restored["cursor"], restored["versions"]
+        distributed.checked(lambda: sampling.validate_progress(start_cycle, cursor),
+                            "restored sampling progress admission")
+        components.state.update({key: session.state[key] for key in components.state})
+        del restored
+    if start_cycle >= config.trainer["cycles"]:
+        raise ValueError("resume target must exceed the checkpoint's completed cycles")
+    root = Path(config.trainer["output_dir"])
+    distributed.primary(lambda: root.mkdir(parents=True, exist_ok=False), "training output creation")
+    distributed.primary(lambda: _json(root / "resolved-config.json", config.to_dict()), "config publication")
+    distributed.primary(lambda: _json(root / "identity.json", identity), "identity publication")
+    if components.construction_receipt:
+        distributed.primary(lambda: _json(root / "construction-admission.json", components.construction_receipt),
+                            "construction admission publication")
+    rank_root = root if world == 1 else root / "ranks" / f"rank-{rank:05d}"
+    if world > 1:
+        distributed.checked(lambda: rank_root.mkdir(parents=True, exist_ok=False), "rank output creation")
+    completed_cycles_this_process = 0
+    validation_runs = 0
+    last_validation = None
+    latest = Path(config.trainer["resume_from"]).resolve() if config.trainer.get("resume_from") else None
+    checkpoint_policy = CheckpointPolicy.from_trainer(config.trainer)
+    last_checkpoint_at = time.perf_counter()
+    totals = {'setup': last_checkpoint_at - job_started, 'build': 0., 'execution': 0.,
+              'finite_check': 0., 'validation': 0., 'metrics': 0., 'checkpoint': 0.,
+              'publication': 0., 'logging': 0.}
+    cycles_wall = 0.
+    from .finite import FiniteCheck
+    finite = FiniteCheck()
+    try:
+        for cycle in range(start_cycle, config.trainer["cycles"]):
+            cycle_started = time.perf_counter()
+            position = sampling.position(cursor + rank)
+            workload = distributed.checked(lambda: build_cycle(
+                config, components, dataset, algorithm, cycle=cycle, cursor=position.sample_index,
+                versions=versions), "cycle construction")
+            started = time.perf_counter()
+            timings = {'build': started - cycle_started}
+            session, outputs = policy.run(workload, root)
+            wall = time.perf_counter() - started
+            timings['execution'] = wall
+            started = time.perf_counter()
+            audit_due = (cycle + 1) % config.execution.get('state_audit_every_cycles', 50) == 0
+            if not all(distributed.gather(finite(session.state, outputs, audit=audit_due))):
+                raise ValueError(f"nonfinite training state/output at cycle {cycle + 1}")
+            timings['finite_check'] = time.perf_counter() - started
+            components.state.update({key: session.state[key] for key in components.state})
+            versions = session.receipt["dispatcher"]["final_versions"]
+            started = time.perf_counter()
+            if validation is not None and (cycle + 1) % validation.settings["every_cycles"] == 0:
+                validation_row = validation.run(config, session.state, cycle=cycle + 1)
+                distributed.checked(lambda: _append_json(rank_root / "validation.jsonl", validation_row),
+                                    "validation metrics publication")
+                rank_validation = distributed.gather(validation_row)
+                last_validation = {"cycle": cycle + 1, "ranks": rank_validation,
+                                   "metrics": validation_row["metrics"], "aggregation": "equal_record_mean",
+                                   "metric_scope": validation_row["metric_scope"], "quality_validation": "NOT_RUN"}
+                validation_runs += 1
+                distributed.primary(lambda last_validation=last_validation: _json(root / "validation-summary.json", last_validation),
+                                    "validation summary publication")
+            timings['validation'] = time.perf_counter() - started
+            started = time.perf_counter()
+            metrics = distributed.checked(lambda: _training_metrics(components, outputs), "training metric collection")
+            cursor += world
+            row = {"cycle": cycle + 1, "rank": rank, "sample_id": dataset.sample_id(position.sample_index), "cursor": cursor,
+                   "sample_index": position.sample_index, "epoch": position.epoch, "epoch_offset": position.epoch_offset,
+                   "metrics": metrics, "wall_s": wall,
+                   "versions": versions, "finite": True,
+                   "execution": session.receipt, "policy_sha256": digest(policy.bound),
+                   "timing_scope": "TRAINING_DIAGNOSTIC_INCLUDES_INITIAL_PLAN_ADMISSION"}
+            if data_progress(dataset, cursor) is not None:
+                row['data_progress'] = data_progress(dataset, cursor)
+            completed_cycles_this_process += 1
+            timings['metrics'] = time.perf_counter() - started
+            started = time.perf_counter()
+            due = checkpoint_policy.due(cycle=cycle + 1, total=config.trainer['cycles'],
+                                        elapsed=started - last_checkpoint_at)
+            # Only wall-clock cadence needs agreement. Fixed-cycle/disabled
+            # policies already matched in the preconstruction control exchange.
+            if checkpoint_policy.every_cycles is None:
+                due = any(distributed.gather(due))
+            checkpoint_decision_s = time.perf_counter() - started
+            row.update(prepublication_wall_s=time.perf_counter() - cycle_started, timings_s=dict(timings),
+                       cycle_timing_scope='CYCLE_PREPUBLICATION_BEFORE_METRICS_CHECKPOINT_AND_POLICY_PUBLICATION')
+            started = time.perf_counter()
+            # Finish real serialization, append and close on every rank before
+            # publishing new recovery state or pruning the previous checkpoint.
+            distributed.checked(lambda: _append_json(rank_root / "metrics.jsonl", row),
+                                "training metrics publication")
+            totals['logging'] += time.perf_counter() - started
+            started = time.perf_counter()
+            if due:
+                latest = save_checkpoint(root / "checkpoints" / f"cycle-{cycle + 1:06d}", session.state,
+                                         identity=identity, cycle=cycle + 1, cursor=cursor,
+                                         versions=versions, policy=policy.bound, data_progress=data_progress(dataset, cursor))
+                distributed.primary(lambda: prune_checkpoints(root / 'checkpoints', identity=identity,
+                    keep_last=checkpoint_policy.keep_last), 'checkpoint retention')
+                last_checkpoint_at = time.perf_counter()
+            timings['checkpoint'] = checkpoint_decision_s + time.perf_counter() - started
+            started = time.perf_counter()
+            if completed_cycles_this_process == 1:
+                distributed.primary(lambda: _json(root / "effective-policy.json", policy.bound), "policy publication")
+            timings['publication'] = time.perf_counter() - started
+            for key, seconds in timings.items():
+                totals[key] += seconds
+            cycles_wall += time.perf_counter() - cycle_started
+        rank_results = distributed.gather({"rank": rank, "completed_cycles": config.trainer["cycles"],
+                                           "cursor": cursor, "versions": versions})
+        result = {"schema_version": "distillschedule.training_result.v1", "status": "COMPLETE",
+                  "completed_cycles": config.trainer["cycles"], "cycles_this_process": completed_cycles_this_process,
+                  "resume_cycle": start_cycle, "cursor": cursor, "final_versions": versions,
+                  "finite": True, "numerical_status": policy.bound["initial_reference_gate"]["status"],
+                  "quality_validation": "NOT_RUN", "claimable_speedup": False,
+                  "validation": {"status": ("DISABLED" if validation is None else
+                                             "COMPLETED_ADAPTER_METRICS" if validation_runs else "NOT_DUE"),
+                                 "runs_this_process": validation_runs, "last": last_validation},
+                  "checkpoint": str(latest) if latest else None, "identity": identity,
+                  "sampling": sampling.describe(),
+                  "world_size": world, "rank_count": len(rank_results), "ranks": rank_results,
+                  "policy": policy.bound, "gpu_execution": session.receipt["gpu_execution"]}
+        result.update(job_wall_s=time.perf_counter() - job_started, cycles_wall_s=cycles_wall, timings_s=totals,
+                      cycles_timing_scope='ALL_COMPLETED_CYCLES_THROUGH_METRICS_CHECKPOINT_AND_POLICY_PUBLICATION',
+                      job_timing_scope='SETUP_AND_ALL_CYCLES_THROUGH_FINAL_RANK_COLLECTION')
+        distributed.primary(lambda: _json(root / "summary.json", result), "training summary publication")
+        return result
+    except BaseException as exc:
+        try:
+            _json(rank_root / "failure.json", {"status": "FAILED", "error": str(exc),
+                                         "completed_cycles_this_process": completed_cycles_this_process, "cursor": cursor,
+                                         "last_complete_checkpoint": str(latest) if latest else None})
+        except Exception:
+            # A full/unwritable output directory must not mask the training error.
+            pass
+        raise
+
+
+def _load_for_output(config, checkpoint):
+    components, dataset, algorithm, identity = _checked_construct(config, "output construction")
+    try:
+        return _restore_for_output(config, checkpoint, components, dataset, algorithm, identity)
+    except BaseException:
+        with components.managed():
+            raise
+
+
+def _restore_for_output(config, checkpoint, components, dataset, algorithm, identity):
+    if any(row != identity for row in distributed.gather(identity)):
+        raise ValueError("ranks disagree on checkpoint output configuration, source or dataset")
+    rank, world = distributed.rank_world()
+    sampling = training_sampling(config, dataset, world_size=world)
+    workload = distributed.checked(lambda: build_cycle(config, components, dataset, algorithm, cycle=0,
+                                                      cursor=sampling.position(rank).sample_index),
+                                   "output workload construction")
+    metadata = distributed.checked(lambda: read_manifest(checkpoint, identity=identity), "output checkpoint reading")
+    if any(row != digest(metadata) for row in distributed.gather(digest(metadata))):
+        raise ValueError("ranks disagree on output checkpoint manifest or progress")
+    distributed.checked(lambda: sampling.validate_progress(metadata["cycle"], metadata["cursor"]),
+                        "output sampling progress admission")
+    distributed.checked(lambda: validate_data_progress(dataset, metadata), 'output stream progress admission')
+    policy = CyclePolicy(config.execution)
+    distributed.checked(lambda: policy.restore(metadata["policy"]), "output policy admission")
+    def structure_admission():
+        if cycle_structure(workload) != policy.bound["structure"]:
+            raise ValueError("checkpoint output workload structure changed")
+    distributed.checked(structure_admission, "output workload structure admission")
+    # The saved DDP/FSDP/HSDP owner must exist BEFORE decoding local shards.
+    # Reuse the persistent Program lifecycle, without executing a train update.
+    session = policy.prepare_resume(workload)
+    # Reuse restart's complete collective proof before loading local shards;
+    # do not rehash every model-sized peer file independently on every rank.
+    payload = (_read_collective_checkpoint(checkpoint, identity=identity) if world > 1 else
+               distributed.checked(lambda: read_checkpoint(checkpoint, identity=identity), "output checkpoint files admission"))
+    distributed.checked(lambda: sampling.validate_progress(payload["cycle"], payload["cursor"]),
+                        "output shard sampling progress admission")
+    unpack_state(payload["state"], session.state, progress={key:payload[key] for key in ("cycle", "cursor", "versions")})
+    components.state.update({key: session.state[key] for key in components.state})
+    return components, dataset, payload, identity, session
+
+
+def _generation_parameters(parameters):
+    try:
+        # Pass the same canonical JSON value to every callback, not only an
+        # equal hash of differing Python tuple/key representations.
+        return json.loads(json.dumps(dict(parameters or {}), sort_keys=True, allow_nan=False))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("generation parameters must be finite JSON values") from exc
+
+
+def _generate_values(config, components, feeds, parameters, *, video_required=False, latents_required=False, output_kind=None):
+    import torch
+    from torch.utils._pytree import tree_map
+
+    from .inference import decoded_video, decoded_media, latent_outputs
+    if components.generate is None:
+        raise ValueError("model adapter does not implement generation")
+    for value in components.state.values():
+        if isinstance(value, torch.nn.Module):
+            value.eval()
+    feeds = tree_map(lambda value: value.to(config.trainer.get("device", "cpu"))
+                     if isinstance(value, torch.Tensor) else value, feeds)
+    # This runtime noise seed is independent of factory initialization/defaults
+    # and of RNG consumed while assembling the checkpoint's training workload.
+    _seed(config.trainer.get("seed", 0), device=config.trainer.get("device", "cpu"))
+    with torch.no_grad():
+        generated = components.generate(components.state, feeds, dict(parameters or {}))
+        decoded = (components.decode(generated, dict(parameters or {}))
+                   if components.decode and not latents_required else generated)
+    if not _finite({}, {"generated": generated, "decoded": decoded}):
+        raise ValueError("generation produced nonfinite values")
+    if latents_required:
+        latent_outputs(generated)
+    elif output_kind:
+        decoded_media(decoded, required_kind=output_kind)
+    else:
+        decoded_video(decoded, required=video_required)
+    return {"generated": generated, "decoded": decoded}
+
+
+def evaluate(config, checkpoint, output, *, sample_index=0, parameters=None, prepared=None, stream=None):
+    with distributed.context(config), ExitStack() as lifetime:
+        from .inference import write_generation
+        root = Path(output).expanduser().resolve()
+        def admit_request():
+            effective = _generation_parameters(parameters)
+            return effective, digest({"output": str(root), "sample_index": sample_index, "parameters": effective,
+                                      "prepared": str(prepared) if prepared is not None else None, "stream": stream})
+        parameters, request = distributed.checked(admit_request, "evaluation request admission")
+        if any(row != request for row in distributed.gather(request)):
+            raise ValueError("ranks disagree on shared evaluation request")
+        components, dataset, payload, identity, _session = _load_for_output(config, checkpoint)
+        lifetime.enter_context(components.managed())
+        rank, world = distributed.rank_world()
+        def admit():
+            from .data_streams import InputStreams
+            from distillschedule.data import PreparedDataset
+            if prepared is not None and stream is not None:
+                raise ValueError('evaluation takes prepared or stream, not both')
+            inputs = dataset
+            if prepared is not None:
+                inputs = PreparedDataset(prepared)
+            elif isinstance(dataset, InputStreams):
+                name = stream or ('generator' if 'generator' in dataset.datasets else None)
+                if name not in dataset.datasets:
+                    raise ValueError('multistream evaluation requires an explicit physical input stream')
+                inputs = dataset.datasets[name]
+            elif stream is not None:
+                raise ValueError('evaluation stream requires multistream training data')
+            if type(sample_index) is not int or sample_index < 0 or sample_index + world > len(inputs):
+                raise ValueError("evaluation sample index cohort out of range")
+            if components.generate is None:
+                raise ValueError("model adapter does not implement generation")
+            return inputs.sample(sample_index + rank), inputs.sample_id(sample_index + rank), inputs.identity
+        feeds, sample_id, input_identity = distributed.checked(admit, "evaluation input admission")
+        if any(row != input_identity for row in distributed.gather(input_identity)):
+            raise ValueError('ranks disagree on evaluation input identity')
+        # All ranks execute native forwards (and any FSDP all-gathers), not just
+        # rank zero. Each receives its own rank-strided prepared sample.
+        values = distributed.checked(lambda: _generate_values(config, components, feeds, parameters), "checkpoint generation")
+        # Finish rank-local validation everywhere before any full_tensor gather.
+        values = distributed.checked(lambda: cpu_tree(values), "generation full-output gathering")
+        distributed.primary(lambda: root.mkdir(parents=True, exist_ok=False), "evaluation output creation")
+        rank_root = root if world == 1 else root / "ranks" / f"rank-{rank:05d}"
+        if world > 1:
+            distributed.checked(lambda: rank_root.mkdir(parents=True, exist_ok=False), "evaluation rank output creation")
+        result = distributed.checked(lambda: write_generation(rank_root, values, metadata={
+            "status": "GENERATED", "kind": "INFERENCE_FROM_TRAINING_CHECKPOINT",
+            "checkpoint_cycle": payload["cycle"], "rank": rank, "world_size": world,
+            "sample_index": sample_index + rank, "sample_id": sample_id, "identity": identity,
+            "input_identity": input_identity, "generation_parameters": parameters,
+            "inference_seed": config.trainer.get("seed", 0)}), "evaluation artifact writing")
+        results = distributed.gather(result)
+        def publish():
+            if world > 1:
+                _json(root / "generation.json", {"status": "GENERATED", "world_size": world,
+                    "checkpoint_cycle": payload["cycle"], "identity": identity, "ranks": results,
+                    "generation_parameters": parameters, "inference_seed": config.trainer.get("seed", 0),
+                    "quality_validation": "NOT_RUN"})
+            (root / "_SUCCESS").write_text(file_sha256(root / "generation.json") + "\n")
+        distributed.primary(publish, "evaluation summary publication")
+        return result
+
+
+def export(config, checkpoint, output):
+    with distributed.context(config), ExitStack() as lifetime:
+        from .inference import publish_export
+        components, _, payload, identity, _session = _load_for_output(config, checkpoint)
+        lifetime.enter_context(components.managed())
+        cycle = payload["cycle"]
+        # Restore has installed the live optimizer/state owners. The serialized
+        # module snapshot is obsolete before projection or export allocates one.
+        del payload
+        parameters = {key: value for key, value in _model_parameters(config).items() if key != "device"}
+        factory, source = config.model["factory"], identity["model"]
+        if components.inference_projection is not None:
+            def project():
+                value = components.inference_projection(components, dict(parameters))
+                if not isinstance(value, InferenceProjection):
+                    raise ValueError("inference_projection must return InferenceProjection")
+                # A returned provider is ours before local or peer admission.
+                # Invalid close fields must retain their validation error.
+                if (isinstance(value.components, ModelComponents) and value.components is not components
+                        and (value.components.close is None or callable(value.components.close))):
+                    lifetime.enter_context(value.components.managed())
+                return value.validate()
+            projection = distributed.checked(project, "inference projection admission")
+            _, source = distributed.checked(lambda: load_callable(projection.factory), "inference factory source admission")
+            components, factory = projection.components, projection.factory
+            parameters = _generation_parameters(projection.parameters)
+            parameters.setdefault("seed", config.trainer.get("seed", 0))
+            identity = {"model": source, "model_metadata": dict(components.metadata), "training_provenance": identity}
+        return publish_export(components, output, model={"factory": factory,
+            "source": source, "parameters": parameters, "metadata": dict(components.metadata)},
+            identity=identity, cycle=cycle,
+            primary_only=components.export is None and distributed.rank_world()[1] > 1)
+
+
+def generate_from_export(config, weights_dir, output, *, prepared, sample_index=0, parameters=None, output_kind="video"):
+    """Generate on new prepared inputs, without training data, algorithm or RNG state."""
+    from distillschedule.data import PreparedDataset
+
+    from .inference import VerifiedExport, write_generation
+    if output_kind not in ('image', 'video', 'audio', 'audio_video', 'latents'):
+        raise ValueError('unsupported output_kind')
+    if distributed.rank_world()[1] != 1 or int(os.environ.get("WORLD_SIZE", "1")) != 1:
+        raise ValueError("portable export generation is single-process; distributed checkpoint evaluation uses evaluate")
+    if config.execution.get("adapter", "program") != "program":
+        raise ValueError("portable inference requires a Program model adapter")
+    # Integrity admission precedes model imports/construction and any output.
+    with VerifiedExport(weights_dir) as verified:
+        manifest = verified.manifest
+        parameters = _generation_parameters(parameters)
+        model = manifest["model"]
+        effective = {key: value for key, value in _model_parameters(config).items() if key != "device"}
+        if not _same_factory(config.model["factory"], model["factory"]) or digest(effective) != digest(model["parameters"]):
+            raise ValueError("export model factory or effective parameters changed")
+        dataset = PreparedDataset(prepared)
+        if type(sample_index) is not int or not 0 <= sample_index < len(dataset):
+            raise ValueError("generation sample index out of range")
+        feeds, sample_id = dataset.sample(sample_index), dataset.sample_id(sample_index)
+        _seed(config.trainer.get("seed", 0), device=config.trainer.get("device", "cpu"))
+        components, model_source = _construct_model(config, source=model["source"])
+        with components.managed():
+            if digest(dict(components.metadata)) != digest(model["metadata"]):
+                raise ValueError("export model metadata changed")
+            verified.restore_modules(components)
+            values = cpu_tree(_generate_values(config, components, feeds, parameters,
+                                              video_required=output_kind == "video", latents_required=output_kind == "latents",
+                                              output_kind=None if output_kind == 'latents' else output_kind))
+        export_manifest_sha256 = verified.manifest_sha256
+    output = Path(output).expanduser().resolve()
+    output.mkdir(parents=True, exist_ok=False)
+    result = write_generation(output, values, metadata={
+        "status": "GENERATED", "kind": "INFERENCE_FROM_EXPORTED_WEIGHTS", "sample_index": sample_index,
+        "sample_id": sample_id, "input_identity": dataset.identity,
+        "generation_parameters": parameters, "inference_seed": config.trainer.get("seed", 0),
+        "loaded_factory": model_source,
+        "export_manifest_sha256": export_manifest_sha256,
+        "model": model, "checkpoint_cycle": manifest["checkpoint_cycle"]}, output_kind=output_kind)
+    (output / "_SUCCESS").write_text(file_sha256(output / "generation.json") + "\n")
+    return result

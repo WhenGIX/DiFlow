@@ -1,0 +1,1919 @@
+{
+  "schema_version": 1,
+  "source_snapshot": "fee3e29e25ba481bb87d42270bb3af57a3676ccd",
+  "notice": "Source navigation, not a claim of GPU validation or automatic portability.",
+  "implementations": [
+    {
+      "id": "fsdp-phase-retention",
+      "title": "FSDP2 完整单元的受控参数驻留",
+      "usage_mode": "runtime_component",
+      "scope": "现有 FSDP2 primitive，要求全 rank 同意物化顺序；不保证旧 r36/任何新模型容量。",
+      "entrypoints": [
+        {
+          "source_id": "src-858971a584e75a10",
+          "locator": "fsdp2_variable_forward_phase",
+          "symbol": "fsdp2_variable_forward_phase",
+          "line_start": 98,
+          "line_end": 142
+        }
+      ],
+      "integration": [
+        {
+          "source_id": "src-858971a584e75a10",
+          "locator": "_PhaseEngine.step",
+          "symbol": "_PhaseEngine.step",
+          "line_start": 53,
+          "line_end": 62
+        },
+        {
+          "source_id": "src-858971a584e75a10",
+          "locator": "_PhaseEngine.release",
+          "symbol": "_PhaseEngine.release",
+          "line_start": 73,
+          "line_end": 94
+        }
+      ],
+      "tests": [
+        {
+          "source_id": "src-87ce2efed4540dc1",
+          "locator": "test_materializes_before_calls_releases_before_original_step_and_restores_policy",
+          "symbol": "test_materializes_before_calls_releases_before_original_step_and_restores_policy",
+          "line_start": 68,
+          "line_end": 85
+        },
+        {
+          "source_id": "src-87ce2efed4540dc1",
+          "locator": "test_failure_restores_every_unit_without_committing",
+          "symbol": "test_failure_restores_every_unit_without_committing",
+          "line_start": 102,
+          "line_end": 119
+        }
+      ],
+      "correctness_conditions": {
+        "weights_stable_during_reuse": true,
+        "whole_checkpoint_units": true,
+        "state_release_validated": true
+      },
+      "performance_conditions": {
+        "repeated_forwards": true,
+        "exposed_gather": true,
+        "memory_headroom": true
+      },
+      "integration_instructions": "通过 fsdp2_variable_forward_phase(enabled=..., with_grad=..., expected_units=...) 包住合法 phase；有梯度时绑定真实 checkpoint block 类型，保留原 engine 的 backward/step。",
+      "fallback": {
+        "action": "新进程使用 enabled=False 的原 control；已进入的 scope 在异常或 step 前必须完成 release，不能把该 engine view 带出 scope。",
+        "references": [
+          {
+            "source_id": "src-858971a584e75a10",
+            "locator": "_PhaseEngine.step",
+            "symbol": "_PhaseEngine.step",
+            "line_start": 53,
+            "line_end": 62
+          }
+        ]
+      },
+      "validation_scope": "本次只核对固定源码、定义和测试位置，未重新执行所列组件测试。所列测试覆盖以正文为准；helper 的 CPU 测试不等于组件训练验收。",
+      "test_gap": "所列测试不构成当前 workload 的实机完整周期/组合/恢复验收；这些检查仍需按改动风险选择。"
+    },
+    {
+      "id": "helios-rollout-residency",
+      "title": "Helios 单次 no-grad rollout 的参数驻留",
+      "usage_mode": "runtime_component",
+      "scope": "固定 Helios FSDP 单元 census；外部 ResearchBoost 仅是同机制建议。",
+      "entrypoints": [
+        {
+          "source_id": "src-8a0fc07db2779472",
+          "locator": "generator_nograd_persistent_unshard_scope",
+          "symbol": "generator_nograd_persistent_unshard_scope",
+          "line_start": 43,
+          "line_end": 162
+        }
+      ],
+      "integration": [
+        {
+          "source_id": "src-32502ddb304ad4ee",
+          "locator": "StaticFSDP2P0Policy",
+          "symbol": "StaticFSDP2P0Policy",
+          "line_start": 47,
+          "line_end": 231
+        }
+      ],
+      "tests": [
+        {
+          "source_id": "src-7dd0f978e0985dd5",
+          "locator": "test_original_detached_persistence_preserves_all_rank_local_calls_without_nested_phase",
+          "symbol": "test_original_detached_persistence_preserves_all_rank_local_calls_without_nested_phase",
+          "line_start": 466,
+          "line_end": 494
+        }
+      ],
+      "correctness_conditions": {
+        "grad_mode": "no_grad",
+        "weights_stable_during_reuse": true,
+        "state_release_validated": true
+      },
+      "performance_conditions": {
+        "repeated_forwards": true,
+        "exposed_gather": true,
+        "memory_headroom": true
+      },
+      "integration_instructions": "核对 policy.generator_nograd_persistent_unshard 与 flush_allocator_cache；只包 no-grad rollout，进入下一个更新阶段前退出 scope。",
+      "fallback": {
+        "action": "用新 control 进程关闭 generator_nograd_persistent_unshard；不得仅删除 flush 后沿用旧容量验收。",
+        "references": [
+          {
+            "source_id": "src-32502ddb304ad4ee",
+            "locator": "StaticFSDP2P0Policy",
+            "symbol": "StaticFSDP2P0Policy",
+            "line_start": 47,
+            "line_end": 231
+          }
+        ]
+      },
+      "validation_scope": "本次只核对固定源码、定义和测试位置，未重新执行所列组件测试。所列测试覆盖以正文为准；helper 的 CPU 测试不等于组件训练验收。",
+      "test_gap": "所列测试不构成当前 workload 的实机完整周期/组合/恢复验收；这些检查仍需按改动风险选择。"
+    },
+    {
+      "id": "helios-cross-kv",
+      "title": "Helios 单 rollout cross-attention KV cache",
+      "usage_mode": "runtime_component",
+      "scope": "只缓存 pre-norm encoder KV；不能替代 history self-attention cache，也不能进入可微调用。",
+      "entrypoints": [
+        {
+          "source_id": "src-b3be2b53ec5f73d4",
+          "locator": "install_generator_nograd_cross_kv_cache",
+          "symbol": "install_generator_nograd_cross_kv_cache",
+          "line_start": 101,
+          "line_end": 246
+        },
+        {
+          "source_id": "src-b3be2b53ec5f73d4",
+          "locator": "generator_nograd_cross_kv_cache_scope",
+          "symbol": "generator_nograd_cross_kv_cache_scope",
+          "line_start": 269,
+          "line_end": 473
+        }
+      ],
+      "integration": [
+        {
+          "source_id": "src-32502ddb304ad4ee",
+          "locator": "StaticFSDP2P0Policy",
+          "symbol": "StaticFSDP2P0Policy",
+          "line_start": 47,
+          "line_end": 231
+        },
+        {
+          "source_id": "src-575aacc6c9db4d0f",
+          "locator": "_build_static_model",
+          "symbol": "_build_static_model",
+          "line_start": 215,
+          "line_end": 404,
+          "focus_call": "install_generator_nograd_cross_kv_cache",
+          "focus_start": 314,
+          "focus_end": 317
+        },
+        {
+          "source_id": "src-cf3deefe9f9235e8",
+          "locator": "run_generator_trace_rollout_batch",
+          "symbol": "run_generator_trace_rollout_batch",
+          "line_start": 42,
+          "line_end": 289,
+          "focus_call": "generator_nograd_cross_kv_cache_scope",
+          "focus_start": 146,
+          "focus_end": 151
+        }
+      ],
+      "tests": [],
+      "correctness_conditions": {
+        "grad_mode": "no_grad",
+        "microbatch": 1,
+        "cache_key_complete": true,
+        "weights_stable_during_reuse": true,
+        "invalidation_validated": true,
+        "upstream_source_hash_matches": true
+      },
+      "performance_conditions": {
+        "cache_reuse_sufficient": true,
+        "saved_compute_exceeds_cache_cost": true
+      },
+      "integration_instructions": "先 source-pin 安装 generator wrapper，再在 generator_nograd_cross_kv_cache_scope 内传 source_encoder_hidden_states；policy.generator_nograd_cross_kv_cache 仅支持 B1。",
+      "fallback": {
+        "action": "在干净进程关闭 generator_nograd_cross_kv_cache，使用原始投影路径；已安装 wrapper 的进程不能以再次调用 disabled 安装器代替真正回退。",
+        "references": [
+          {
+            "source_id": "src-32502ddb304ad4ee",
+            "locator": "StaticFSDP2P0Policy",
+            "symbol": "StaticFSDP2P0Policy",
+            "line_start": 47,
+            "line_end": 231
+          }
+        ]
+      },
+      "validation_scope": "本次只核对固定源码、定义和测试位置，未重新执行所列组件测试。所列测试覆盖以正文为准；helper 的 CPU 测试不等于组件训练验收。",
+      "test_gap": "未在该源码快照中定位到专门验证此组件前后向/完整周期的测试；不得把配置检查当作该项验收。"
+    },
+    {
+      "id": "helios-static-context",
+      "title": "Helios rollout 静态 context cache",
+      "usage_mode": "runtime_component",
+      "scope": "绑定源码和 tensor identity/version/layout；零误差不意味着有性能收益。",
+      "entrypoints": [
+        {
+          "source_id": "src-844e83428b157170",
+          "locator": "install_generator_nograd_static_context_cache",
+          "symbol": "install_generator_nograd_static_context_cache",
+          "line_start": 153,
+          "line_end": 404
+        },
+        {
+          "source_id": "src-844e83428b157170",
+          "locator": "generator_nograd_static_context_cache_scope",
+          "symbol": "generator_nograd_static_context_cache_scope",
+          "line_start": 408,
+          "line_end": 596
+        }
+      ],
+      "integration": [
+        {
+          "source_id": "src-32502ddb304ad4ee",
+          "locator": "StaticFSDP2P0Policy",
+          "symbol": "StaticFSDP2P0Policy",
+          "line_start": 47,
+          "line_end": 231
+        },
+        {
+          "source_id": "src-575aacc6c9db4d0f",
+          "locator": "_build_static_model",
+          "symbol": "_build_static_model",
+          "line_start": 215,
+          "line_end": 404,
+          "focus_call": "install_generator_nograd_static_context_cache",
+          "focus_start": 318,
+          "focus_end": 322
+        },
+        {
+          "source_id": "src-cf3deefe9f9235e8",
+          "locator": "run_generator_trace_rollout_batch",
+          "symbol": "run_generator_trace_rollout_batch",
+          "line_start": 42,
+          "line_end": 289,
+          "focus_call": "generator_nograd_static_context_cache_scope",
+          "focus_start": 151,
+          "focus_end": 159
+        }
+      ],
+      "tests": [],
+      "correctness_conditions": {
+        "grad_mode": "no_grad",
+        "cache_key_complete": true,
+        "invalidation_validated": true,
+        "upstream_source_hash_matches": true
+      },
+      "performance_conditions": {
+        "cache_reuse_sufficient": true,
+        "saved_compute_exceeds_cache_cost": true
+      },
+      "integration_instructions": "核对 generator_nograd_static_context_cache；仅复用 history patch/RoPE/text 等静态项，当前 latent 和 timestep 仍进入原始路径。",
+      "fallback": {
+        "action": "用原 control 在新进程关闭 static context cache；退出 scope 后检查所有 payload 释放。",
+        "references": [
+          {
+            "source_id": "src-32502ddb304ad4ee",
+            "locator": "StaticFSDP2P0Policy",
+            "symbol": "StaticFSDP2P0Policy",
+            "line_start": 47,
+            "line_end": 231
+          }
+        ]
+      },
+      "validation_scope": "本次只核对固定源码、定义和测试位置，未重新执行所列组件测试。所列测试覆盖以正文为准；helper 的 CPU 测试不等于组件训练验收。",
+      "test_gap": "未在该源码快照中定位到专门验证此组件前后向/完整周期的测试；不得把配置检查当作该项验收。"
+    },
+    {
+      "id": "wan-lora-epilogue",
+      "title": "Wan no-grad LoRA 融合及实际安装 wrapper",
+      "usage_mode": "runtime_component",
+      "scope": "BF16 base + FP32 LoRA update；保留两次 FP32 round-to-nearest 再转 BF16。",
+      "entrypoints": [
+        {
+          "source_id": "src-578b8f574b3de503",
+          "locator": "fused_lora_epilogue",
+          "symbol": "fused_lora_epilogue",
+          "line_start": 55,
+          "line_end": 92
+        }
+      ],
+      "integration": [
+        {
+          "source_id": "src-59596264f979a2da",
+          "locator": "install_generator_nograd_lora_fused_epilogue",
+          "symbol": "install_generator_nograd_lora_fused_epilogue",
+          "line_start": 430,
+          "line_end": 610
+        },
+        {
+          "source_id": "src-94237bcbb5732cf3",
+          "locator": "_build_model_fair",
+          "symbol": "_build_model_fair",
+          "line_start": 75,
+          "line_end": 305,
+          "focus_call": "install_generator_nograd_lora_fused_epilogue",
+          "focus_start": 257,
+          "focus_end": 260
+        }
+      ],
+      "tests": [
+        {
+          "source_id": "src-77c254a4c66ec9f0",
+          "locator": "test_fused_cast_composition_output_gradient_input_version_and_scope",
+          "symbol": "test_fused_cast_composition_output_gradient_input_version_and_scope",
+          "line_start": 20,
+          "line_end": 84
+        }
+      ],
+      "correctness_conditions": {
+        "grad_mode": "no_grad",
+        "base_dtype": "bfloat16",
+        "lora_update_dtype": "float32",
+        "contiguous_inputs": true,
+        "numerical_contract_preserved": true
+      },
+      "performance_conditions": {
+        "epilogue_on_critical_path": true
+      },
+      "integration_instructions": "经 install_generator_nograd_lora_fused_epilogue 的角色、源码和 no-grad guard 接入；不要把底层 Triton 函数直接塞进可微 Linear。",
+      "fallback": {
+        "action": "恢复原 PEFT forward 的干净进程，关闭融合开关；底层函数本身没有 autograd fallback。",
+        "references": [
+          {
+            "source_id": "src-59596264f979a2da",
+            "locator": "install_generator_nograd_lora_fused_epilogue",
+            "symbol": "install_generator_nograd_lora_fused_epilogue",
+            "line_start": 430,
+            "line_end": 610
+          }
+        ]
+      },
+      "validation_scope": "本次只核对固定源码、定义和测试位置，未重新执行所列组件测试。所列测试覆盖以正文为准；helper 的 CPU 测试不等于组件训练验收。",
+      "test_gap": "所列测试将 fused kernel 替换成 CPU eager mock，验证 wrapper/cache 组合与 grad passthrough；不覆盖真实 CUDA kernel、当前 workload 或完整训练周期。",
+      "related_implementations": [
+        {
+          "id": "wan-lora-grad-epilogue",
+          "note": "需要梯度时检查这个独立的 autograd 备选；它不继承 no-grad 案例的历史收益或验收。"
+        }
+      ]
+    },
+    {
+      "id": "wan-lora-grad-epilogue",
+      "title": "Wan 可微 LoRA epilogue 的独立备选",
+      "usage_mode": "runtime_component",
+      "scope": "可微前向/checkpoint replay 的独立候选，底层 BF16/FP32 内核与 no-grad 路径共享但导数由单独 autograd 实现；没有从 no-grad 历史结果继承收益。",
+      "entrypoints": [
+        {
+          "source_id": "src-84046de74698cc70",
+          "locator": "fused_lora_epilogue_with_grad",
+          "symbol": "fused_lora_epilogue_with_grad",
+          "line_start": 79,
+          "line_end": 85
+        },
+        {
+          "source_id": "src-84046de74698cc70",
+          "locator": "make_epilogue_autograd_function",
+          "symbol": "make_epilogue_autograd_function",
+          "line_start": 51,
+          "line_end": 76
+        }
+      ],
+      "integration": [
+        {
+          "source_id": "src-84046de74698cc70",
+          "locator": "install_grad_lora_fused_epilogue",
+          "symbol": "install_grad_lora_fused_epilogue",
+          "line_start": 88,
+          "line_end": 154
+        },
+        {
+          "source_id": "src-94237bcbb5732cf3",
+          "locator": "_build_model_fair",
+          "symbol": "_build_model_fair",
+          "line_start": 75,
+          "line_end": 305,
+          "focus_call": "install_grad_lora_fused_epilogue",
+          "focus_start": 266,
+          "focus_end": 266
+        }
+      ],
+      "tests": [
+        {
+          "source_id": "src-36d3189ed5fbee78",
+          "locator": "test_real_cpu_autograd_matches_native_output_and_both_gradients",
+          "symbol": "test_real_cpu_autograd_matches_native_output_and_both_gradients",
+          "line_start": 42,
+          "line_end": 60
+        },
+        {
+          "source_id": "src-36d3189ed5fbee78",
+          "locator": "test_runtime_receipts_require_actual_execution",
+          "symbol": "test_runtime_receipts_require_actual_execution",
+          "line_start": 82,
+          "line_end": 90
+        }
+      ],
+      "correctness_conditions": {
+        "grad_mode": "grad_enabled",
+        "base_dtype": "bfloat16",
+        "lora_update_dtype": "float32",
+        "single_vanilla_active_adapter": true,
+        "upstream_source_hash_matches": true,
+        "checkpoint_replay_validated": true
+      },
+      "performance_conditions": {
+        "epilogue_on_critical_path": true
+      },
+      "integration_instructions": "通过 DISTILLSCHEDULE_WAN13B_GRAD_LORA_FUSED_EPILOGUE 显式 opt-in；分别读取 autograd forward/backward 与 installer 的 PEFT source/adapter guard，检查实际 receipt。",
+      "fallback": {
+        "action": "新进程设置该变量为 0 并恢复原 PEFT 路径；不要从失败后残留的 wrapper/optimizer 状态继续作为 control。",
+        "references": [
+          {
+            "source_id": "src-84046de74698cc70",
+            "locator": "install_grad_lora_fused_epilogue",
+            "symbol": "install_grad_lora_fused_epilogue",
+            "line_start": 88,
+            "line_end": 154
+          }
+        ]
+      },
+      "validation_scope": "本次只核对固定源码、定义和测试位置，未重新执行所列组件测试。所列测试覆盖以正文为准；helper 的 CPU 测试不等于组件训练验收。",
+      "test_gap": "CPU eager forward 注入测试覆盖 native input gradients，receipt 测试检查命中声明；真实 Triton CUDA 路径、checkpoint replay 与完整周期仍需当前验证。"
+    },
+    {
+      "id": "wan-cast-cache",
+      "title": "Wan 冻结 LoRA 路径的 cast cache wrapper",
+      "usage_mode": "runtime_component",
+      "scope": "当前相关 wrapper，不证明历史 cache 的时间可转移；外部 dtype 方法范围更广。",
+      "entrypoints": [
+        {
+          "source_id": "src-59596264f979a2da",
+          "locator": "install_generator_nograd_lora_cast_cache",
+          "symbol": "install_generator_nograd_lora_cast_cache",
+          "line_start": 265,
+          "line_end": 427
+        }
+      ],
+      "integration": [
+        {
+          "source_id": "src-59596264f979a2da",
+          "locator": "install_generator_nograd_lora_cast_cache",
+          "symbol": "install_generator_nograd_lora_cast_cache",
+          "line_start": 265,
+          "line_end": 427
+        }
+      ],
+      "tests": [
+        {
+          "source_id": "src-77c254a4c66ec9f0",
+          "locator": "test_fused_cast_composition_output_gradient_input_version_and_scope",
+          "symbol": "test_fused_cast_composition_output_gradient_input_version_and_scope",
+          "line_start": 20,
+          "line_end": 84
+        }
+      ],
+      "correctness_conditions": {
+        "grad_mode": "no_grad",
+        "weights_stable_during_reuse": true,
+        "invalidation_validated": true
+      },
+      "performance_conditions": {
+        "cache_reuse_sufficient": true,
+        "saved_compute_exceeds_cache_cost": true
+      },
+      "integration_instructions": "读取 wrapper 的 cast 对象与源 hash gate，只处理被允许的冻结计算路径，不转换训练 master/optimizer state。",
+      "fallback": {
+        "action": "新进程禁用 cast cache 并恢复源 forward；重新核对实际 cast 次数和参数 dtype。",
+        "references": [
+          {
+            "source_id": "src-59596264f979a2da",
+            "locator": "install_generator_nograd_lora_cast_cache",
+            "symbol": "install_generator_nograd_lora_cast_cache",
+            "line_start": 265,
+            "line_end": 427
+          }
+        ]
+      },
+      "validation_scope": "本次只核对固定源码、定义和测试位置，未重新执行所列组件测试。所列测试覆盖以正文为准；helper 的 CPU 测试不等于组件训练验收。",
+      "test_gap": "所列测试将 fused kernel 替换成 CPU eager mock，验证 wrapper/cache 组合与 grad passthrough；不覆盖真实 CUDA kernel、当前 workload 或完整训练周期。"
+    },
+    {
+      "id": "helios-modulation-chunks",
+      "title": "Helios modulation chunk 参数入口",
+      "usage_mode": "runtime_component",
+      "scope": "只改变 token 独立操作的分块 launch；不是修改 attention/MLP 逻辑形状。",
+      "entrypoints": [
+        {
+          "source_id": "src-37d1baabbd0094ed",
+          "locator": "configure_helios_modulation_chunk_tokens",
+          "symbol": "configure_helios_modulation_chunk_tokens",
+          "line_start": 19,
+          "line_end": 85
+        }
+      ],
+      "integration": [
+        {
+          "source_id": "src-32502ddb304ad4ee",
+          "locator": "StaticFSDP2P0Policy",
+          "symbol": "StaticFSDP2P0Policy",
+          "line_start": 47,
+          "line_end": 231
+        }
+      ],
+      "tests": [],
+      "correctness_conditions": {
+        "model_family": "Helios14B",
+        "helios_block_count": 40,
+        "role": [
+          "generator",
+          "critic"
+        ]
+      },
+      "performance_conditions": {
+        "pointwise_launch_cost_exposed": true
+      },
+      "integration_instructions": "chunk_tokens 仅接受 512/1024/2048，逐个核对 40 个 HeliosTransformerBlock；不要将该入口用于 Wan 的同名概念。",
+      "fallback": {
+        "action": "从干净 control 进程设置 512；实现拒绝已经被另一候选修改过的 chunk 策略。",
+        "references": [
+          {
+            "source_id": "src-32502ddb304ad4ee",
+            "locator": "StaticFSDP2P0Policy",
+            "symbol": "StaticFSDP2P0Policy",
+            "line_start": 47,
+            "line_end": 231
+          }
+        ]
+      },
+      "validation_scope": "本次只核对固定源码、定义和测试位置，未重新执行所列组件测试。所列测试覆盖以正文为准；helper 的 CPU 测试不等于组件训练验收。",
+      "test_gap": "未在该源码快照中定位到专门验证此组件前后向/完整周期的测试；不得把配置检查当作该项验收。"
+    },
+    {
+      "id": "helios-modnorm",
+      "title": "Helios modulation norm 的安装与融合实现",
+      "usage_mode": "runtime_component",
+      "scope": "当前源码中存在多条互斥融合路径；按所选分支验证。",
+      "entrypoints": [
+        {
+          "source_id": "src-aeff6dc73e170dae",
+          "locator": "install_exact_modulated_norm_epilogue",
+          "symbol": "install_exact_modulated_norm_epilogue",
+          "line_start": 24,
+          "line_end": 774
+        },
+        {
+          "source_id": "src-6059dbbaaa6aaed7",
+          "locator": "fused_modulated_norm_epilogue",
+          "symbol": "fused_modulated_norm_epilogue",
+          "line_start": 207,
+          "line_end": 263
+        }
+      ],
+      "integration": [
+        {
+          "source_id": "src-aeff6dc73e170dae",
+          "locator": "install_exact_modulated_norm_epilogue",
+          "symbol": "install_exact_modulated_norm_epilogue",
+          "line_start": 24,
+          "line_end": 774
+        }
+      ],
+      "tests": [],
+      "correctness_conditions": {
+        "model_family": "Helios14B",
+        "upstream_source_hash_matches": true,
+        "gradient_path_supported": true,
+        "numerical_contract_preserved": true
+      },
+      "performance_conditions": {
+        "norm_on_critical_path": true
+      },
+      "integration_instructions": "先读 installer 的 distinct forward/backward 选项和 source guards；仅调用 epilogue kernel 不等于安装完整 LayerNorm/backward 融合。",
+      "fallback": {
+        "action": "在新进程恢复原 source norm 与 backward；按输出及梯度分别验证，不能只用某个 canary 代替整体。",
+        "references": [
+          {
+            "source_id": "src-aeff6dc73e170dae",
+            "locator": "install_exact_modulated_norm_epilogue",
+            "symbol": "install_exact_modulated_norm_epilogue",
+            "line_start": 24,
+            "line_end": 774
+          }
+        ]
+      },
+      "validation_scope": "本次只核对固定源码、定义和测试位置，未重新执行所列组件测试。所列测试覆盖以正文为准；helper 的 CPU 测试不等于组件训练验收。",
+      "test_gap": "未在该源码快照中定位到专门验证此组件前后向/完整周期的测试；不得把配置检查当作该项验收。"
+    },
+    {
+      "id": "helios-crossnorm-canary",
+      "title": "Helios LayerNorm/modulation canary",
+      "usage_mode": "diagnostic_only",
+      "scope": "诊断参考；不把当前模块与历史 cross-norm 实验视为同一个实现。",
+      "entrypoints": [
+        {
+          "source_id": "src-be0668b60be64fbb",
+          "locator": "fused_bf16_layernorm_modulation",
+          "symbol": "fused_bf16_layernorm_modulation",
+          "line_start": 135,
+          "line_end": 222
+        }
+      ],
+      "integration": [
+        {
+          "source_id": "src-aeff6dc73e170dae",
+          "locator": "install_exact_modulated_norm_epilogue",
+          "symbol": "install_exact_modulated_norm_epilogue",
+          "line_start": 24,
+          "line_end": 774
+        }
+      ],
+      "tests": [],
+      "correctness_conditions": {
+        "numerical_contract_preserved": true,
+        "dtype_layout_supported": true
+      },
+      "performance_conditions": {
+        "norm_on_critical_path": true
+      },
+      "integration_instructions": "此入口是相关 LayerNorm canary，不是历史 cross-norm 候选的已验证直接替换；先核对 affine、dtype、reduction 与 backward。",
+      "fallback": {
+        "action": "保持原 norm 默认路径；独立 canary 未通过不能接入全模型。",
+        "references": [
+          {
+            "source_id": "src-aeff6dc73e170dae",
+            "locator": "install_exact_modulated_norm_epilogue",
+            "symbol": "install_exact_modulated_norm_epilogue",
+            "line_start": 24,
+            "line_end": 774
+          }
+        ]
+      },
+      "validation_scope": "本次只核对固定源码、定义和测试位置，未重新执行所列组件测试。所列测试覆盖以正文为准；helper 的 CPU 测试不等于组件训练验收。",
+      "test_gap": "未在该源码快照中定位到专门验证此组件前后向/完整周期的测试；不得把配置检查当作该项验收。"
+    },
+    {
+      "id": "livewan-generator-modulation",
+      "title": "LiveWan Generator modulation canary 与 runtime scope",
+      "usage_mode": "runtime_component",
+      "scope": "C32 指定 Generator canary/运行域；没有跨角色通用支持。",
+      "entrypoints": [
+        {
+          "source_id": "src-a70845766daa38d8",
+          "locator": "build",
+          "symbol": "build",
+          "line_start": 18,
+          "line_end": 65
+        },
+        {
+          "source_id": "src-a70845766daa38d8",
+          "locator": "model_runtime_scope",
+          "symbol": "model_runtime_scope",
+          "line_start": 140,
+          "line_end": 146
+        }
+      ],
+      "integration": [
+        {
+          "source_id": "src-a70845766daa38d8",
+          "locator": "install",
+          "symbol": "install",
+          "line_start": 131,
+          "line_end": 136
+        }
+      ],
+      "tests": [
+        {
+          "source_id": "src-51dbdd0fe3eb1d77",
+          "locator": "test_no_grad_required_before_import_or_device_access",
+          "symbol": "test_no_grad_required_before_import_or_device_access",
+          "line_start": 16,
+          "line_end": 21
+        },
+        {
+          "source_id": "src-51dbdd0fe3eb1d77",
+          "locator": "test_only_installed_on_explicit_validated_g_scope",
+          "symbol": "test_only_installed_on_explicit_validated_g_scope",
+          "line_start": 35,
+          "line_end": 39
+        }
+      ],
+      "correctness_conditions": {
+        "grad_mode": "no_grad",
+        "microbatch": 1,
+        "width": 1536,
+        "scale_shift_dtype": "float32",
+        "role": "generator"
+      },
+      "performance_conditions": {
+        "pointwise_launch_cost_exposed": true
+      },
+      "integration_instructions": "明确通过 canary/runtime scope 启用；检查 Generator 的 FP32 scale/shift，不能套到 Score 的不同 dtype。",
+      "fallback": {
+        "action": "退出 scope 并使用 default-off 安装路径；runtime receipt 不满足该方案时回到原实现。",
+        "references": [
+          {
+            "source_id": "src-a70845766daa38d8",
+            "locator": "install",
+            "symbol": "install",
+            "line_start": 131,
+            "line_end": 136
+          }
+        ]
+      },
+      "validation_scope": "本次只核对固定源码、定义和测试位置，未重新执行所列组件测试。所列测试覆盖以正文为准；helper 的 CPU 测试不等于组件训练验收。",
+      "test_gap": "所列测试不构成当前 workload 的实机完整周期/组合/恢复验收；这些检查仍需按改动风险选择。"
+    },
+    {
+      "id": "helios-history-fusion",
+      "title": "Helios history/current add+cat 融合",
+      "usage_mode": "runtime_component",
+      "scope": "与 C25 同机制的 source-pinned helper，当前组合仍需完整周期验证。",
+      "entrypoints": [
+        {
+          "source_id": "src-66647956bc165eb3",
+          "locator": "install_exact_history_current_fusion",
+          "symbol": "install_exact_history_current_fusion",
+          "line_start": 77,
+          "line_end": 179
+        }
+      ],
+      "integration": [
+        {
+          "source_id": "src-66647956bc165eb3",
+          "locator": "_rewrite_forward_source",
+          "symbol": "_rewrite_forward_source",
+          "line_start": 43,
+          "line_end": 74
+        }
+      ],
+      "tests": [],
+      "correctness_conditions": {
+        "upstream_source_hash_matches": true,
+        "gradient_path_supported": true,
+        "numerical_contract_preserved": true
+      },
+      "performance_conditions": {
+        "pointwise_launch_cost_exposed": true
+      },
+      "integration_instructions": "仅在源 hash 和 rewrite 模板完全匹配时安装；核对 actual calls/fallback 与训练梯度。",
+      "fallback": {
+        "action": "新进程不安装该 rewrite，保留原 forward；不能在未知源版本上模糊替换文本。",
+        "references": [
+          {
+            "source_id": "src-66647956bc165eb3",
+            "locator": "_rewrite_forward_source",
+            "symbol": "_rewrite_forward_source",
+            "line_start": 43,
+            "line_end": 74
+          }
+        ]
+      },
+      "validation_scope": "本次只核对固定源码、定义和测试位置，未重新执行所列组件测试。所列测试覆盖以正文为准；helper 的 CPU 测试不等于组件训练验收。",
+      "test_gap": "未在该源码快照中定位到专门验证此组件前后向/完整周期的测试；不得把配置检查当作该项验收。"
+    },
+    {
+      "id": "helios-fsdp-layout",
+      "title": "Helios world16 FSDP/node-HSDP 配置",
+      "usage_mode": "runtime_component",
+      "scope": "Helios 固定 profile 的并行 helper，不是任意节点数的通用 HSDP 接口。",
+      "entrypoints": [
+        {
+          "source_id": "src-32502ddb304ad4ee",
+          "locator": "create_device_mesh",
+          "symbol": "create_device_mesh",
+          "line_start": 273,
+          "line_end": 288
+        },
+        {
+          "source_id": "src-32502ddb304ad4ee",
+          "locator": "apply_blockwise_fsdp2_policy",
+          "symbol": "apply_blockwise_fsdp2_policy",
+          "line_start": 291,
+          "line_end": 398
+        }
+      ],
+      "integration": [
+        {
+          "source_id": "src-32502ddb304ad4ee",
+          "locator": "StaticFSDP2P0Policy",
+          "symbol": "StaticFSDP2P0Policy",
+          "line_start": 47,
+          "line_end": 231
+        }
+      ],
+      "tests": [],
+      "correctness_conditions": {
+        "logical_batch_preserved": true,
+        "gradient_reduction_preserved": true,
+        "mesh_contract_validated": true
+      },
+      "performance_conditions": {
+        "topology_calibrated": true,
+        "memory_headroom": true
+      },
+      "integration_instructions": "读取 mesh policy 的 replicate/shard 约束、完整模型构造峰值和原训练时钟；GAS/逻辑 batch 不随 mesh 改动。",
+      "fallback": {
+        "action": "新进程恢复 world16-fsdp control；并行布局不能在已有 optimizer state 上随意就地切换。",
+        "references": [
+          {
+            "source_id": "src-32502ddb304ad4ee",
+            "locator": "StaticFSDP2P0Policy",
+            "symbol": "StaticFSDP2P0Policy",
+            "line_start": 47,
+            "line_end": 231
+          }
+        ]
+      },
+      "validation_scope": "本次只核对固定源码、定义和测试位置，未重新执行所列组件测试。所列测试覆盖以正文为准；helper 的 CPU 测试不等于组件训练验收。",
+      "test_gap": "未在该源码快照中定位到专门验证此组件前后向/完整周期的测试；不得把配置检查当作该项验收。"
+    },
+    {
+      "id": "optimizer-dispatch-warmup",
+      "title": "FSDP2 optimizer dispatch 预热与状态恢复",
+      "usage_mode": "runtime_component",
+      "scope": "不能将真实训练更新挪出计时窗口；原 warmup 对 state 的恢复逻辑是必读入口。",
+      "entrypoints": [
+        {
+          "source_id": "src-ac58f7e1652e2ec5",
+          "locator": "_optimizer_dispatch_warmup",
+          "symbol": "_optimizer_dispatch_warmup",
+          "line_start": 545,
+          "line_end": 775
+        }
+      ],
+      "integration": [
+        {
+          "source_id": "src-ac58f7e1652e2ec5",
+          "locator": "build_fsdp2_engine",
+          "symbol": "build_fsdp2_engine",
+          "line_start": 779,
+          "line_end": 828
+        }
+      ],
+      "tests": [],
+      "correctness_conditions": {
+        "optimizer_state_restored": true,
+        "weights_restored": true,
+        "rng_restored": true,
+        "update_clocks_preserved": true
+      },
+      "performance_conditions": {
+        "cold_dispatch_is_relevant": true
+      },
+      "integration_instructions": "沿 build_fsdp2_engine 的原 warmup 参数接入；比较预热前后全部参数/梯度/Adam/scheduler/RNG，单列 setup 时间。",
+      "fallback": {
+        "action": "使用关闭 warmup 的新 control 进程；恢复不完整时丢弃该初始化状态。",
+        "references": [
+          {
+            "source_id": "src-ac58f7e1652e2ec5",
+            "locator": "build_fsdp2_engine",
+            "symbol": "build_fsdp2_engine",
+            "line_start": 779,
+            "line_end": 828
+          }
+        ]
+      },
+      "validation_scope": "本次只核对固定源码、定义和测试位置，未重新执行所列组件测试。所列测试覆盖以正文为准；helper 的 CPU 测试不等于组件训练验收。",
+      "test_gap": "未在该源码快照中定位到专门验证此组件前后向/完整周期的测试；不得把配置检查当作该项验收。"
+    },
+    {
+      "id": "helios-selective-checkpoint",
+      "title": "Helios FA2 selective checkpoint 保留",
+      "usage_mode": "runtime_component",
+      "scope": "FA2 算子级保留策略可供最小适配；外层 FSDP2/P0 训练接入固定 world16/B16 和40个block。不是无条件保存全部 attention；真实 backend 和最坏更新阶段容量都需验收。",
+      "entrypoints": [
+        {
+          "source_id": "src-ac58f7e1652e2ec5",
+          "locator": "_selective_flash_checkpoint_contexts",
+          "symbol": "_selective_flash_checkpoint_contexts",
+          "line_start": 84,
+          "line_end": 111
+        },
+        {
+          "source_id": "src-ac58f7e1652e2ec5",
+          "locator": "configure_fsdp2_checkpointing",
+          "symbol": "configure_fsdp2_checkpointing",
+          "line_start": 171,
+          "line_end": 290
+        }
+      ],
+      "integration": [
+        {
+          "source_id": "src-32502ddb304ad4ee",
+          "locator": "StaticFSDP2P0Policy",
+          "symbol": "StaticFSDP2P0Policy",
+          "line_start": 47,
+          "line_end": 231
+        }
+      ],
+      "tests": [],
+      "correctness_conditions": {
+        "attention_backend": "FA2",
+        "checkpoint_replay_pure": true,
+        "gradient_path_supported": true
+      },
+      "performance_conditions": {
+        "recompute_cost_exposed": true,
+        "memory_headroom": true
+      },
+      "integration_instructions": "读取 selective Flash checkpoint policy；先证明真实 FA2 op 被命中，再选择保留密度。保持原 checkpoint 的 RNG 与反向路径。 区分策略函数与外层训练接入：后者的 world16/B16 不能直接用于8卡；适配策略须保持目标逻辑工作，重新验证真实算子、block身份及梯度路径。",
+      "fallback": {
+        "action": "恢复原 checkpoint dispatcher/原 stride；不删除 optimizer/update 的语义步骤。",
+        "references": [
+          {
+            "source_id": "src-32502ddb304ad4ee",
+            "locator": "StaticFSDP2P0Policy",
+            "symbol": "StaticFSDP2P0Policy",
+            "line_start": 47,
+            "line_end": 231
+          }
+        ]
+      },
+      "validation_scope": "本次只核对固定源码、定义和测试位置，未重新执行所列组件测试。所列测试覆盖以正文为准；helper 的 CPU 测试不等于组件训练验收。",
+      "test_gap": "未在该源码快照中定位到专门验证此组件前后向/完整周期的测试；不得把配置检查当作该项验收。"
+    },
+    {
+      "id": "block-activation-retention",
+      "title": "选择完整 block 保留 autograd 激活",
+      "usage_mode": "runtime_component",
+      "scope": "当前相关 block retention，不是历史 tail8 patch 的身份保证。",
+      "entrypoints": [
+        {
+          "source_id": "src-3e07619bbf636e0d",
+          "locator": "install",
+          "symbol": "install",
+          "line_start": 11,
+          "line_end": 62
+        }
+      ],
+      "integration": [
+        {
+          "source_id": "src-3e07619bbf636e0d",
+          "locator": "install",
+          "symbol": "install",
+          "line_start": 11,
+          "line_end": 62
+        }
+      ],
+      "tests": [
+        {
+          "source_id": "src-b2e4eb2777333117",
+          "locator": "test_original_forward_backward_adam_rng_and_selected_recompute",
+          "symbol": "test_original_forward_backward_adam_rng_and_selected_recompute",
+          "line_start": 33,
+          "line_end": 47
+        },
+        {
+          "source_id": "src-b2e4eb2777333117",
+          "locator": "test_uncalibrated_retention_is_rejected_by_calibration_before_cuda",
+          "symbol": "test_uncalibrated_retention_is_rejected_by_calibration_before_cuda",
+          "line_start": 87,
+          "line_end": 97
+        }
+      ],
+      "correctness_conditions": {
+        "checkpoint_replay_pure": true,
+        "gradient_path_supported": true,
+        "whole_checkpoint_units": true
+      },
+      "performance_conditions": {
+        "recompute_cost_exposed": true,
+        "memory_headroom": true
+      },
+      "integration_instructions": "按实际模块选择 opt-in block retention，未选择模块保留原 dispatcher；先校准候选内存成本。",
+      "fallback": {
+        "action": "不安装/选择空集合，恢复原 checkpoint；不能从 tail8 OOM 推导当前允许的 block 数。",
+        "references": [
+          {
+            "source_id": "src-3e07619bbf636e0d",
+            "locator": "install",
+            "symbol": "install",
+            "line_start": 11,
+            "line_end": 62
+          }
+        ]
+      },
+      "validation_scope": "本次只核对固定源码、定义和测试位置，未重新执行所列组件测试。所列测试覆盖以正文为准；helper 的 CPU 测试不等于组件训练验收。",
+      "test_gap": "所列测试不构成当前 workload 的实机完整周期/组合/恢复验收；这些检查仍需按改动风险选择。"
+    },
+    {
+      "id": "h3-boundary-offload",
+      "title": "H3 checkpoint 边界 CPU offload",
+      "usage_mode": "runtime_component",
+      "scope": "CPU 边界搬运与 full model GPU residency 可同时存在；配置测试不证明完整状态等价。",
+      "entrypoints": [
+        {
+          "source_id": "src-1c0c141a9d68f0c6",
+          "locator": "install_checkpoint_boundary_cpu_offload",
+          "symbol": "install_checkpoint_boundary_cpu_offload",
+          "line_start": 187,
+          "line_end": 336
+        }
+      ],
+      "integration": [
+        {
+          "source_id": "src-1c0c141a9d68f0c6",
+          "locator": "CheckpointBoundaryOffloadRegistration",
+          "symbol": "CheckpointBoundaryOffloadRegistration",
+          "line_start": 156,
+          "line_end": 184
+        }
+      ],
+      "tests": [
+        {
+          "source_id": "src-48a6ac669182b23f",
+          "locator": "test_selected_fields_cannot_be_ignored_by_actual_config",
+          "symbol": "test_selected_fields_cannot_be_ignored_by_actual_config",
+          "line_start": 84,
+          "line_end": 98
+        }
+      ],
+      "correctness_conditions": {
+        "checkpoint_replay_pure": true,
+        "storage_aliases_preserved": true,
+        "offload_completion_order_validated": true
+      },
+      "performance_conditions": {
+        "host_memory_headroom": true,
+        "device_capacity_bottleneck": true
+      },
+      "integration_instructions": "通过 H3 checkpoint_boundary_cpu policy 选择精确边界；检查 registration、pack/unpack、实际传输字节和最晚 backward。",
+      "fallback": {
+        "action": "保持原 checkpoint policy 的新进程；边界对象仍存活时不可拆掉 hook 或提前释放 CPU storage。",
+        "references": [
+          {
+            "source_id": "src-1c0c141a9d68f0c6",
+            "locator": "CheckpointBoundaryOffloadRegistration",
+            "symbol": "CheckpointBoundaryOffloadRegistration",
+            "line_start": 156,
+            "line_end": 184
+          }
+        ]
+      },
+      "validation_scope": "本次只核对固定源码、定义和测试位置，未重新执行所列组件测试。所列测试覆盖以正文为准；helper 的 CPU 测试不等于组件训练验收。",
+      "test_gap": "所列测试检查配置字段确实生效；不是 boundary pack/unpack 的真实 GPU 数值、峰值与完整 backward 验收。"
+    },
+    {
+      "id": "h3-attention-replay",
+      "title": "H3 FA3 replay cache 与 staged 路径",
+      "usage_mode": "runtime_component",
+      "scope": "FA3 专用当前参考；W6 的 FA2 对照不能直接启用此模块。",
+      "entrypoints": [
+        {
+          "source_id": "src-72fa00c8871306ea",
+          "locator": "install_fa3_replay_cache",
+          "symbol": "install_fa3_replay_cache",
+          "line_start": 880,
+          "line_end": 1131
+        },
+        {
+          "source_id": "src-72fa00c8871306ea",
+          "locator": "prepare_staged_cache_before_backward",
+          "symbol": "prepare_staged_cache_before_backward",
+          "line_start": 854,
+          "line_end": 872
+        }
+      ],
+      "integration": [
+        {
+          "source_id": "src-72fa00c8871306ea",
+          "locator": "parse_storage",
+          "symbol": "parse_storage",
+          "line_start": 819,
+          "line_end": 825
+        },
+        {
+          "source_id": "src-72fa00c8871306ea",
+          "locator": "validate_cycle",
+          "symbol": "validate_cycle",
+          "line_start": 1134,
+          "line_end": 1224
+        }
+      ],
+      "tests": [
+        {
+          "source_id": "src-48a6ac669182b23f",
+          "locator": "test_receipt_selected_cache_execution_and_all_ranks_fail_closed",
+          "symbol": "test_receipt_selected_cache_execution_and_all_ranks_fail_closed",
+          "line_start": 147,
+          "line_end": 161
+        },
+        {
+          "source_id": "src-48a6ac669182b23f",
+          "locator": "test_inactive_cuda_prefetch_is_not_an_invented_candidate",
+          "symbol": "test_inactive_cuda_prefetch_is_not_an_invented_candidate",
+          "line_start": 70,
+          "line_end": 79
+        }
+      ],
+      "correctness_conditions": {
+        "attention_backend": "FA3",
+        "checkpoint_replay_pure": true,
+        "cache_key_complete": true,
+        "offload_completion_order_validated": true
+      },
+      "performance_conditions": {
+        "recompute_cost_exposed": true,
+        "host_memory_headroom": true,
+        "memory_headroom": true
+      },
+      "integration_instructions": "核对 block_indices、storage 与 max_d2h_inflight；staged 路径进入 backward 前准备，并用 validate_cycle 检查实际执行。",
+      "fallback": {
+        "action": "用原 control 新进程禁用 replay cache；CPU-stage 卡住时先用有限超时采集等待，不改名为 OOM 或默认重试。",
+        "references": [
+          {
+            "source_id": "src-72fa00c8871306ea",
+            "locator": "parse_storage",
+            "symbol": "parse_storage",
+            "line_start": 819,
+            "line_end": 825
+          }
+        ]
+      },
+      "validation_scope": "本次只核对固定源码、定义和测试位置，未重新执行所列组件测试。所列测试覆盖以正文为准；helper 的 CPU 测试不等于组件训练验收。",
+      "test_gap": "所列为 workflow/receipt/配置验证；没有覆盖 CPU-stage futex 停滞的根因、真实 CUDA kernel 数值或完整训练周期。"
+    },
+    {
+      "id": "h3-adaln-bank",
+      "title": "H3 冻结 AdaLN projection bank",
+      "usage_mode": "runtime_component",
+      "scope": "当前 H3 bank 参考；不把其文件 hash 当作 r41 性能结论的新验证。",
+      "entrypoints": [
+        {
+          "source_id": "src-12f74d1e3ecb5760",
+          "locator": "install_adaln_cache",
+          "symbol": "install_adaln_cache",
+          "line_start": 233,
+          "line_end": 268
+        },
+        {
+          "source_id": "src-12f74d1e3ecb5760",
+          "locator": "AdaLNCacheController",
+          "symbol": "AdaLNCacheController",
+          "line_start": 51,
+          "line_end": 175
+        }
+      ],
+      "integration": [
+        {
+          "source_id": "src-12f74d1e3ecb5760",
+          "locator": "adaln_bank",
+          "symbol": "adaln_bank",
+          "line_start": 271,
+          "line_end": 273
+        },
+        {
+          "source_id": "src-12f74d1e3ecb5760",
+          "locator": "adaln_controller",
+          "symbol": "adaln_controller",
+          "line_start": 276,
+          "line_end": 278
+        }
+      ],
+      "tests": [],
+      "correctness_conditions": {
+        "adaln_parameters_frozen": true,
+        "cache_key_complete": true,
+        "invalidation_validated": true
+      },
+      "performance_conditions": {
+        "cache_reuse_sufficient": true,
+        "saved_compute_exceeds_cache_cost": true
+      },
+      "integration_instructions": "从 install_adaln_cache 检查冻结参数断言与 cache scope；不删除注册参数、不合并训练权重。",
+      "fallback": {
+        "action": "新进程保留原 AdaLN 模块，关闭该 cache/bank；比较完整 cycle，不能仅展示命中率。",
+        "references": [
+          {
+            "source_id": "src-12f74d1e3ecb5760",
+            "locator": "adaln_bank",
+            "symbol": "adaln_bank",
+            "line_start": 271,
+            "line_end": 273
+          }
+        ]
+      },
+      "validation_scope": "本次只核对固定源码、定义和测试位置，未重新执行所列组件测试。所列测试覆盖以正文为准；helper 的 CPU 测试不等于组件训练验收。",
+      "test_gap": "未在该源码快照中定位到专门验证此组件前后向/完整周期的测试；不得把配置检查当作该项验收。"
+    },
+    {
+      "id": "profile-attribution",
+      "title": "Nsight SQLite 区间与 rank 覆盖分析",
+      "usage_mode": "analysis_tool",
+      "scope": "分析工具，不自动采集 profile，也不把非重叠搬运算成可消除关键路径。 当前 search/profile.py 固定2节点×8卡、rank=node*8+device；不能直接接受H100单节点8卡数据。",
+      "entrypoints": [
+        {
+          "source_id": "src-f39a756f1f057342",
+          "locator": "parse_profile",
+          "symbol": "parse_profile",
+          "line_start": 140,
+          "line_end": 211
+        },
+        {
+          "source_id": "src-f39a756f1f057342",
+          "locator": "validate_profile",
+          "symbol": "validate_profile",
+          "line_start": 214,
+          "line_end": 232
+        }
+      ],
+      "integration": [
+        {
+          "source_id": "src-f39a756f1f057342",
+          "locator": "feature_weights",
+          "symbol": "feature_weights",
+          "line_start": 235,
+          "line_end": 251
+        }
+      ],
+      "tests": [
+        {
+          "source_id": "src-2eeb8de3479a3f51",
+          "locator": "test_sqlite_per_device_union_pid_and_reconciliation",
+          "symbol": "test_sqlite_per_device_union_pid_and_reconciliation",
+          "line_start": 213,
+          "line_end": 225
+        },
+        {
+          "source_id": "src-2eeb8de3479a3f51",
+          "locator": "test_phase_partition_matches_full_scan_with_cross_boundary_copies",
+          "symbol": "test_phase_partition_matches_full_scan_with_cross_boundary_copies",
+          "line_start": 246,
+          "line_end": 257
+        }
+      ],
+      "correctness_conditions": {
+        "profile_source_identity_matches": true,
+        "rank_coverage_known": true,
+        "timer_scope_known": true,
+        "nodes": 2,
+        "gpus_per_node": 8,
+        "physical_gpus": 16
+      },
+      "performance_conditions": {},
+      "integration_instructions": "输入实际 trace manifest，先通过 validate_profile，再读 union/overlap、rank 覆盖与源身份；对 Nsight Compute 的 occupancy 还需其专用指标。",
+      "fallback": {
+        "action": "覆盖不足保留 partial/unknown，回到原 trace/未观测计时；不填补缺失 rank 或把空洞归因为 CPU。",
+        "references": [
+          {
+            "source_id": "src-f39a756f1f057342",
+            "locator": "feature_weights",
+            "symbol": "feature_weights",
+            "line_start": 235,
+            "line_end": 251
+          }
+        ]
+      },
+      "validation_scope": "本次只核对固定源码、定义和测试位置，未重新执行所列组件测试。所列测试覆盖以正文为准；helper 的 CPU 测试不等于组件训练验收。",
+      "test_gap": "所列解析/区间测试不证明输入 trace 的完整性、真实因果关系或 profiler 无扰动。"
+    },
+    {
+      "id": "planner-calibration",
+      "title": "Planner 的已测成本及结果资格",
+      "usage_mode": "analysis_tool",
+      "scope": "解析与资格检查入口；source/config/shape/state policy 变化后成本必须重新核对。",
+      "entrypoints": [
+        {
+          "source_id": "src-1a0e9283a3c285ea",
+          "locator": "CostModel",
+          "symbol": "CostModel",
+          "line_start": 77,
+          "line_end": 195
+        },
+        {
+          "source_id": "src-1ecf2c3c95cac55d",
+          "locator": "normalize_native",
+          "symbol": "normalize_native",
+          "line_start": 18,
+          "line_end": 98
+        }
+      ],
+      "integration": [
+        {
+          "source_id": "src-08a95d62329e282a",
+          "locator": "component_contract",
+          "symbol": "component_contract",
+          "line_start": 68,
+          "line_end": 91
+        }
+      ],
+      "tests": [
+        {
+          "source_id": "src-2eeb8de3479a3f51",
+          "locator": "test_native_measurement_fail_closed",
+          "symbol": "test_native_measurement_fail_closed",
+          "line_start": 95,
+          "line_end": 100
+        },
+        {
+          "source_id": "src-48a6ac669182b23f",
+          "locator": "test_shape_and_storage_costs_and_comparisons_are_not_reused",
+          "symbol": "test_shape_and_storage_costs_and_comparisons_are_not_reused",
+          "line_start": 164,
+          "line_end": 183
+        }
+      ],
+      "correctness_conditions": {
+        "cost_source_identity_matches": true,
+        "logical_work_preserved": true,
+        "state_policy_bound": true
+      },
+      "performance_conditions": {},
+      "integration_instructions": "使用真实 component contract/calibration 与 native receipt；未测成本保持 missing，比较当前 manual control 和候选。",
+      "fallback": {
+        "action": "缺 calibration 或验收失败则保持原 control；不把 tie-break 结果报告成实测收益。",
+        "references": [
+          {
+            "source_id": "src-08a95d62329e282a",
+            "locator": "component_contract",
+            "symbol": "component_contract",
+            "line_start": 68,
+            "line_end": 91
+          }
+        ]
+      },
+      "validation_scope": "本次只核对固定源码、定义和测试位置，未重新执行所列组件测试。所列测试覆盖以正文为准；helper 的 CPU 测试不等于组件训练验收。",
+      "test_gap": "所列合同/解析测试不证明成本在新 shape/storage/topology 下准确，也不证明实际计划更快。"
+    },
+    {
+      "id": "checkpoint-lifecycle",
+      "title": "项目 checkpoint 保存与恢复入口",
+      "usage_mode": "runtime_component",
+      "scope": "当前框架入口；不证明历史 LiveWan 恢复峰值已修复，外部保存失败也非本地复现。",
+      "entrypoints": [
+        {
+          "source_id": "src-66b13fd48767ca9f",
+          "locator": "save_checkpoint",
+          "symbol": "save_checkpoint",
+          "line_start": 319,
+          "line_end": 456
+        },
+        {
+          "source_id": "src-66b13fd48767ca9f",
+          "locator": "restore_checkpoint",
+          "symbol": "restore_checkpoint",
+          "line_start": 541,
+          "line_end": 559
+        }
+      ],
+      "integration": [
+        {
+          "source_id": "src-66b13fd48767ca9f",
+          "locator": "_stage_state",
+          "symbol": "_stage_state",
+          "line_start": 177,
+          "line_end": 222
+        },
+        {
+          "source_id": "src-66b13fd48767ca9f",
+          "locator": "validate_rng",
+          "symbol": "validate_rng",
+          "line_start": 266,
+          "line_end": 279
+        }
+      ],
+      "tests": [],
+      "correctness_conditions": {
+        "parameter_mapping_preserved": true,
+        "optimizer_mapping_preserved": true,
+        "rng_restored": true
+      },
+      "performance_conditions": {
+        "host_memory_headroom": true
+      },
+      "integration_instructions": "沿目标 trainer 的 checkpoint 接口保留 canonical 参数/Adam/EMA/RNG/进度映射；_stage_state 是检查临时分配与重复状态的入口。",
+      "fallback": {
+        "action": "保留旧可恢复 checkpoint；新布局/映射的保存恢复未通过前不得覆盖唯一 control checkpoint。",
+        "references": [
+          {
+            "source_id": "src-66b13fd48767ca9f",
+            "locator": "_stage_state",
+            "symbol": "_stage_state",
+            "line_start": 177,
+            "line_end": 222
+          }
+        ]
+      },
+      "validation_scope": "本次只核对固定源码、定义和测试位置，未重新执行所列组件测试。所列测试覆盖以正文为准；helper 的 CPU 测试不等于组件训练验收。",
+      "test_gap": "未在该源码快照中定位到专门验证此组件前后向/完整周期的测试；不得把配置检查当作该项验收。"
+    },
+    {
+      "id": "wan-rollout-graph",
+      "title": "Wan Resident B1 no-grad CUDA Graph 参考",
+      "usage_mode": "runtime_component",
+      "scope": "本地训练中的 no-grad 子路径参考；外部 SGLang 推理案例不验证这个模块。",
+      "entrypoints": [
+        {
+          "source_id": "src-04af16f2c635378c",
+          "locator": "RolloutCudaGraph",
+          "symbol": "RolloutCudaGraph",
+          "line_start": 77,
+          "line_end": 244
+        }
+      ],
+      "integration": [
+        {
+          "source_id": "src-04af16f2c635378c",
+          "locator": "requested",
+          "symbol": "requested",
+          "line_start": 18,
+          "line_end": 22
+        },
+        {
+          "source_id": "src-04af16f2c635378c",
+          "locator": "validate",
+          "symbol": "validate",
+          "line_start": 303,
+          "line_end": 311
+        }
+      ],
+      "tests": [
+        {
+          "source_id": "src-f92dd8b48f2779e3",
+          "locator": "test_dispatch_protocol_live_inputs_weights_and_output_lifetime_cpu",
+          "symbol": "test_dispatch_protocol_live_inputs_weights_and_output_lifetime_cpu",
+          "line_start": 52,
+          "line_end": 109
+        },
+        {
+          "source_id": "src-f92dd8b48f2779e3",
+          "locator": "test_reference_cannot_be_missing_or_in_native_timer",
+          "symbol": "test_reference_cannot_be_missing_or_in_native_timer",
+          "line_start": 135,
+          "line_end": 144
+        }
+      ],
+      "correctness_conditions": {
+        "grad_mode": "no_grad",
+        "microbatch": 1,
+        "parameters_resident": true,
+        "stable_tensor_addresses": true,
+        "dropout_zero": true
+      },
+      "performance_conditions": {
+        "host_launch_cost_exposed": true,
+        "memory_headroom": true,
+        "capture_amortized": true
+      },
+      "integration_instructions": "通过 DISTILLSCHEDULE_WAN13B_GENERATOR_ROLLOUT_CUDA_GRAPH 显式 opt-in，核对 requested/install/validate 及每个 capture key。",
+      "fallback": {
+        "action": "在新进程将该变量置 0，恢复原调用；graph output clone 与 pool 必须覆盖完整生命周期。",
+        "references": [
+          {
+            "source_id": "src-04af16f2c635378c",
+            "locator": "requested",
+            "symbol": "requested",
+            "line_start": 18,
+            "line_end": 22
+          }
+        ]
+      },
+      "validation_scope": "本次只核对固定源码、定义和测试位置，未重新执行所列组件测试。所列测试覆盖以正文为准；helper 的 CPU 测试不等于组件训练验收。",
+      "test_gap": "CPU dispatch protocol 和 receipt 测试不执行真实 CUDA Graph；capture/replay 数值、峰值与完整周期仍需验证。"
+    },
+    {
+      "id": "w6-native-metadata-barrier",
+      "title": "W6 r46 原生 metadata barrier 恢复 packet",
+      "usage_mode": "historical_component",
+      "scope": "历史 W6 AR、同 FA3 原始 varlen 路径，两周期/16 ranks；非通用去同步优化。",
+      "entrypoints": [
+        {
+          "source_id": "src-8797db288ccdddc0",
+          "locator": "NativeMetadataBarrier",
+          "symbol": "NativeMetadataBarrier",
+          "line_start": 7,
+          "line_end": 45
+        }
+      ],
+      "integration": [
+        {
+          "source_id": "src-8797db288ccdddc0",
+          "locator": "install_on_session",
+          "symbol": "install_on_session",
+          "line_start": 48,
+          "line_end": 55
+        },
+        {
+          "source_id": "src-5d8ab3f06565c499",
+          "locator": "main",
+          "symbol": "main",
+          "line_start": 6,
+          "line_end": 48
+        }
+      ],
+      "tests": [
+        {
+          "source_id": "src-a682ae4f9fc4822c",
+          "locator": "test_actual_tolist_before_original_call_and_two_cycle_read_census",
+          "symbol": "test_actual_tolist_before_original_call_and_two_cycle_read_census",
+          "line_start": 24,
+          "line_end": 43
+        }
+      ],
+      "correctness_conditions": {
+        "workload": "W6",
+        "attention_backend": "FA3",
+        "metadata_semantics_preserved": true,
+        "physical_gpus": 16
+      },
+      "performance_conditions": {
+        "same_backend_comparison": true,
+        "metadata_barrier_policy_measured": true
+      },
+      "integration_instructions": "检查 --restore-native-barrier、cu_q.tolist()、350 次读取 census 与原始 backend；只在匹配 packet 内显式开启。",
+      "fallback": {
+        "action": "新进程关闭 restore-native-barrier，使用同 FA3 control；保留原生注意力与输入。",
+        "references": [
+          {
+            "source_id": "src-8797db288ccdddc0",
+            "locator": "install_on_session",
+            "symbol": "install_on_session",
+            "line_start": 48,
+            "line_end": 55
+          },
+          {
+            "source_id": "src-5d8ab3f06565c499",
+            "locator": "main",
+            "symbol": "main",
+            "line_start": 6,
+            "line_end": 48
+          }
+        ]
+      },
+      "validation_scope": "本轮核对固定源码和符号，未执行该历史 GPU/训练实验；测试链接只提供导航。",
+      "test_gap": "当前 workload 的梯度、组合、容量和恢复仍需验证。"
+    },
+    {
+      "id": "w3-frozen-ffn-up-replay",
+      "title": "W3 r1 冻结 FFN-up checkpoint 结果复用",
+      "usage_mode": "historical_component",
+      "scope": "155ffbb5 历史 GAN Critic blocks38/39、两周期/10次C更新；接入硬编码 A100/SM80、world16 与 local_rank=rank%8、Torch 2.10.0+cu128/CUDA 12.8；旧 addmm ABI，不支持任意层或解析二阶 backward。",
+      "entrypoints": [
+        {
+          "source_id": "src-4c9ec2c8e9913909",
+          "locator": "NativeDownSAC.contexts",
+          "symbol": "NativeDownSAC.contexts",
+          "line_start": 66,
+          "line_end": 115
+        }
+      ],
+      "integration": [
+        {
+          "source_id": "src-4c9ec2c8e9913909",
+          "locator": "NativeDownSAC.__init__",
+          "symbol": "NativeDownSAC.__init__",
+          "line_start": 36,
+          "line_end": 54
+        },
+        {
+          "source_id": "src-a03fcf91bfa4b281",
+          "locator": "manual_runtime_scope",
+          "symbol": "manual_runtime_scope",
+          "line_start": 114,
+          "line_end": 227
+        }
+      ],
+      "tests": [
+        {
+          "source_id": "src-77df55b631af66d9",
+          "locator": "test_frozen_up_operand_contract_and_no_trainable_cache",
+          "symbol": "test_frozen_up_operand_contract_and_no_trainable_cache",
+          "line_start": 22,
+          "line_end": 33
+        },
+        {
+          "source_id": "src-77df55b631af66d9",
+          "locator": "test_real_selective_addmm_replay_preserves_finite_difference_r1_gradients_rng",
+          "symbol": "test_real_selective_addmm_replay_preserves_finite_difference_r1_gradients_rng",
+          "line_start": 36,
+          "line_end": 63
+        }
+      ],
+      "correctness_conditions": {
+        "workload": "W3",
+        "grad_mode": "with_grad",
+        "frozen_base_only": true,
+        "replay_scope_validated": true,
+        "gpu_family": "A100",
+        "physical_gpus": 16,
+        "gpus_per_node": 8,
+        "torch_version": "2.10.0+cu128",
+        "cuda_version": "12.8"
+      },
+      "performance_conditions": {
+        "replay_reuses_saved_output": true,
+        "saved_compute_exceeds_cache_cost": true,
+        "memory_headroom": true
+      },
+      "integration_instructions": "历史 NativeDownSAC 的 up_blocks 只接受 () 或 (38,39)；由 candidate_bundle.up_blocks 传入；核对 frozen-up guard、版本/graph FIFO 与释放。manual_runtime_scope 明确拒绝非 A100/SM80、非 world16 或不同 Torch/CUDA；H100/8卡只能提取机制后重新适配，不应删除 guard 冒充原样兼容。硬件/拓扑限制属于此历史接入，不能据此否定结果缓存机制在其他环境的可能收益。",
+      "fallback": {
+        "action": "使用相同历史 control 的 up_blocks=()，保留已存在 down replay 路径与原训练语义。",
+        "references": [
+          {
+            "source_id": "src-4c9ec2c8e9913909",
+            "locator": "NativeDownSAC.__init__",
+            "symbol": "NativeDownSAC.__init__",
+            "line_start": 36,
+            "line_end": 54
+          },
+          {
+            "source_id": "src-a03fcf91bfa4b281",
+            "locator": "manual_runtime_scope",
+            "symbol": "manual_runtime_scope",
+            "line_start": 114,
+            "line_end": 227
+          }
+        ]
+      },
+      "validation_scope": "本轮核对固定源码和符号，未执行该历史 GPU/训练实验；测试链接只提供导航。",
+      "test_gap": "当前 workload 的梯度、组合、容量和恢复仍需验证。"
+    },
+    {
+      "id": "role-producer-dispatch",
+      "title": "按 producer_dispatch 执行真实 forward/backward",
+      "usage_mode": "runtime_component",
+      "scope": "resident replicated role pools；CPU/Gloo 合同，不支持自动推导任意 FSDP/offload 调度。",
+      "entrypoints": [
+        {
+          "source_id": "src-a854d89a2f190d9e",
+          "locator": "RolePoolExecutor._run_cycle",
+          "symbol": "RolePoolExecutor._run_cycle",
+          "line_start": 276,
+          "line_end": 466
+        }
+      ],
+      "integration": [
+        {
+          "source_id": "src-a854d89a2f190d9e",
+          "locator": "RolePoolExecutor._prepare",
+          "symbol": "RolePoolExecutor._prepare",
+          "line_start": 157,
+          "line_end": 225
+        },
+        {
+          "source_id": "src-a854d89a2f190d9e",
+          "locator": "RolePoolExecutor.run",
+          "symbol": "RolePoolExecutor.run",
+          "line_start": 227,
+          "line_end": 255
+        }
+      ],
+      "tests": [],
+      "correctness_conditions": {
+        "resident_replicated_pools": true,
+        "dispatch_identity_validated": true,
+        "logical_state_mapping_preserved": true
+      },
+      "performance_conditions": {
+        "cost_domain_matches_target": true
+      },
+      "integration_instructions": "将已验证 producer_dispatch 交给 RolePoolExecutor；核对 rank一致性、实际forward/backward事件与版本，不能只修改 cost-model 输出。",
+      "fallback": {
+        "action": "使用原已验收的 producer 顺序；不能只替换预测表而宣称执行恢复。",
+        "references": [
+          {
+            "source_id": "src-a854d89a2f190d9e",
+            "locator": "RolePoolExecutor._prepare",
+            "symbol": "RolePoolExecutor._prepare",
+            "line_start": 157,
+            "line_end": 225
+          },
+          {
+            "source_id": "src-a854d89a2f190d9e",
+            "locator": "RolePoolExecutor.run",
+            "symbol": "RolePoolExecutor.run",
+            "line_start": 227,
+            "line_end": 255
+          }
+        ]
+      },
+      "validation_scope": "本轮核对固定源码和符号，未执行该历史 GPU/训练实验；测试链接只提供导航。",
+      "test_gap": "未定位到覆盖该精确历史变体的独立测试；不能借邻近测试声明验收。"
+    },
+    {
+      "id": "wan-exact-ema-11-20",
+      "title": "W1 r34 已知11–20步的原生EMA图",
+      "usage_mode": "historical_component",
+      "scope": "只支持原reference FP32 resident EMA、优化步10起、11..20的十个已知decay和两个原生周期；不是无限训练图。",
+      "entrypoints": [
+        {
+          "source_id": "src-52d8c14b9ee683b9",
+          "locator": "ExactEMAStep",
+          "symbol": "ExactEMAStep",
+          "line_start": 13,
+          "line_end": 29
+        },
+        {
+          "source_id": "src-52d8c14b9ee683b9",
+          "locator": "capture",
+          "symbol": "capture",
+          "line_start": 31,
+          "line_end": 57
+        }
+      ],
+      "integration": [
+        {
+          "source_id": "src-52d8c14b9ee683b9",
+          "locator": "explicit_worker",
+          "symbol": "explicit_worker",
+          "line_start": 60,
+          "line_end": 99
+        }
+      ],
+      "tests": [
+        {
+          "source_id": "src-e372ecee16f50571",
+          "locator": "test_ten_real_cpu_updates_bitwise_output_metadata_and_rng",
+          "symbol": "test_ten_real_cpu_updates_bitwise_output_metadata_and_rng",
+          "line_start": 27,
+          "line_end": 38
+        }
+      ],
+      "correctness_conditions": {
+        "workload": "W1",
+        "ema_coefficients": "known_steps_11_20",
+        "resident_fp32_reference_ema": true
+      },
+      "performance_conditions": {
+        "launch_bound": true,
+        "capture_amortized": true
+      },
+      "integration_instructions": "核对schedule/identity/stream guards；通过explicit_worker显式启用；超出已知区间需重新设计并验收，不能删掉 guard。",
+      "fallback": {
+        "action": "新进程使用 enabled=False 的原 reference EMA。",
+        "references": [
+          {
+            "source_id": "src-52d8c14b9ee683b9",
+            "locator": "explicit_worker",
+            "symbol": "explicit_worker",
+            "line_start": 60,
+            "line_end": 99
+          }
+        ]
+      },
+      "validation_scope": "本轮核对固定源码和符号，未执行该历史 GPU/训练实验；测试链接只提供导航。",
+      "test_gap": "当前 workload 的梯度、组合、容量和恢复仍需验证。"
+    },
+    {
+      "id": "helios-trainable-timestep-residual",
+      "title": "Helios trainable timestep residual backward",
+      "usage_mode": "runtime_component",
+      "scope": "当前Helios phase_local梯度实现；有具体shape、dtype和reduction约束，不是no-grad输出缓存。",
+      "entrypoints": [
+        {
+          "source_id": "src-b4c1ff57cd80eb31",
+          "locator": "fused_gated_residual_trainable_temb_backward_chunk",
+          "symbol": "fused_gated_residual_trainable_temb_backward_chunk",
+          "line_start": 327,
+          "line_end": 391
+        }
+      ],
+      "integration": [
+        {
+          "source_id": "src-7a123e07c9959f13",
+          "locator": "install_generator_nograd_residual_fusion",
+          "symbol": "install_generator_nograd_residual_fusion",
+          "line_start": 58,
+          "line_end": 587
+        }
+      ],
+      "tests": [],
+      "correctness_conditions": {
+        "grad_mode": "with_grad",
+        "timestep_gradients_preserved": true,
+        "bf16_before_reduction": true
+      },
+      "performance_conditions": {
+        "pointwise_staging_on_critical_path": true
+      },
+      "integration_instructions": "函数名含nograd的安装入口也包含训练态分支，逐项核对trainable_residual_backward及phase_local条件，确认真实调用。",
+      "fallback": {
+        "action": "恢复原生residual backward路径；保留梯度和reduction顺序。",
+        "references": [
+          {
+            "source_id": "src-7a123e07c9959f13",
+            "locator": "install_generator_nograd_residual_fusion",
+            "symbol": "install_generator_nograd_residual_fusion",
+            "line_start": 58,
+            "line_end": 587
+          }
+        ]
+      },
+      "validation_scope": "本轮核对固定源码和符号，未执行该历史 GPU/训练实验；测试链接只提供导航。",
+      "test_gap": "未定位到覆盖该精确历史变体的独立测试；不能借邻近测试声明验收。"
+    },
+    {
+      "id": "h3-block49-hybrid-output-cache",
+      "title": "W6 r1 block49 GPU结果缓存",
+      "usage_mode": "historical_component",
+      "scope": "45938af8历史原生selected-output pool；只有block49从pinned CPU改留GPU，严格绑定原consumer/version。 原本地历史提交未发布；当前引用是带原路径/hash记录的逐字节公开归档，并非独立可运行包。",
+      "entrypoints": [
+        {
+          "source_id": "src-0709ebc91417faac",
+          "locator": "pool_class",
+          "symbol": "pool_class",
+          "line_start": 13,
+          "line_end": 124,
+          "historical_origin": {
+            "local_commit": "45938af88d65ddb15b96ec1a181b65aa4e92de70",
+            "path": "src/distillschedule/strategies/h3_ar_hybrid_cache.py",
+            "commit_publicly_fetchable": false,
+            "copy_policy": "BYTE_IDENTICAL_SOURCE_SNAPSHOT"
+          }
+        }
+      ],
+      "integration": [
+        {
+          "source_id": "src-0709ebc91417faac",
+          "locator": "install",
+          "symbol": "install",
+          "line_start": 127,
+          "line_end": 137,
+          "historical_origin": {
+            "local_commit": "45938af88d65ddb15b96ec1a181b65aa4e92de70",
+            "path": "src/distillschedule/strategies/h3_ar_hybrid_cache.py",
+            "commit_publicly_fetchable": false,
+            "copy_policy": "BYTE_IDENTICAL_SOURCE_SNAPSHOT"
+          }
+        },
+        {
+          "source_id": "src-0709ebc91417faac",
+          "locator": "validate_receipt",
+          "symbol": "validate_receipt",
+          "line_start": 140,
+          "line_end": 147,
+          "historical_origin": {
+            "local_commit": "45938af88d65ddb15b96ec1a181b65aa4e92de70",
+            "path": "src/distillschedule/strategies/h3_ar_hybrid_cache.py",
+            "commit_publicly_fetchable": false,
+            "copy_policy": "BYTE_IDENTICAL_SOURCE_SNAPSHOT"
+          }
+        }
+      ],
+      "tests": [
+        {
+          "source_id": "src-d8ea6f4633209092",
+          "locator": "test_full_original_consumer_order_cpu_loss_grad_rng_adam_and_actual_retention",
+          "symbol": "test_full_original_consumer_order_cpu_loss_grad_rng_adam_and_actual_retention",
+          "line_start": 57,
+          "line_end": 69,
+          "historical_origin": {
+            "local_commit": "45938af88d65ddb15b96ec1a181b65aa4e92de70",
+            "path": "tests/test_h3_ar_hybrid_cache.py",
+            "commit_publicly_fetchable": false,
+            "copy_policy": "BYTE_IDENTICAL_SOURCE_SNAPSHOT"
+          }
+        }
+      ],
+      "correctness_conditions": {
+        "workload": "W6",
+        "cache_key_complete": true,
+        "cached_gradients_preserved": true
+      },
+      "performance_conditions": {
+        "saved_cache_transfer_exceeds_overhead": true,
+        "memory_headroom": true
+      },
+      "integration_instructions": "只在对应历史strategy配置启用GPU_BLOCKS=(49,)；核对原父模块身份、GPU输出存储计数与consumer释放。",
+      "fallback": {
+        "action": "恢复原SHA绑定parent pool及pinned CPU存储策略，不改变原始模型或attention。",
+        "references": [
+          {
+            "source_id": "src-0709ebc91417faac",
+            "locator": "install",
+            "symbol": "install",
+            "line_start": 127,
+            "line_end": 137,
+            "historical_origin": {
+              "local_commit": "45938af88d65ddb15b96ec1a181b65aa4e92de70",
+              "path": "src/distillschedule/strategies/h3_ar_hybrid_cache.py",
+              "commit_publicly_fetchable": false,
+              "copy_policy": "BYTE_IDENTICAL_SOURCE_SNAPSHOT"
+            }
+          },
+          {
+            "source_id": "src-0709ebc91417faac",
+            "locator": "validate_receipt",
+            "symbol": "validate_receipt",
+            "line_start": 140,
+            "line_end": 147,
+            "historical_origin": {
+              "local_commit": "45938af88d65ddb15b96ec1a181b65aa4e92de70",
+              "path": "src/distillschedule/strategies/h3_ar_hybrid_cache.py",
+              "commit_publicly_fetchable": false,
+              "copy_policy": "BYTE_IDENTICAL_SOURCE_SNAPSHOT"
+            }
+          }
+        ]
+      },
+      "validation_scope": "本轮核对固定源码和符号，未执行该历史 GPU/训练实验；测试链接只提供导航。",
+      "test_gap": "当前 workload 的梯度、组合、容量和恢复仍需验证。"
+    }
+  ]
+}
